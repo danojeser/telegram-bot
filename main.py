@@ -1,6 +1,7 @@
 import os
 import requests
 import re
+import time
 from dotenv import load_dotenv
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import firebase_admin
@@ -16,31 +17,38 @@ cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 firestore_db = firestore.client()
 
-def get_url():
-    contents = requests.get('https://random.dog/woof.json').json()
-    url = contents['url']
-    return url
 
 
+
+# COMANDOS
 def bop(update, context):
     print('Ejecutanto bop')
     url = get_image_url()
     chat_id = update.effective_chat.id
+    user_id = str(update.effective_user.id)
+
+    print('USER ID: ' + user_id)
+
+    logger('bop', update.effective_user.id, update.effective_chat.id)
+    registerUser(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+    print(update.effective_user.id)
     context.bot.send_photo(chat_id=chat_id, photo=url)
 
 
-def listen(update, context):
-    print('Ejecutando Listen')
-    context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
-
-
-def unknown(update, context):
-    print('Ejecutando Unknown')
-    context.bot.send_message(chat_id=update.effective_chat.id, text='No se que me estas contando crack')
 
 def chilling(update, context):
     print('Ejecutando Chilling')
     message='Estoy de chilling'
+    chat_id = update.effective_chat.id
+
+    users_list = firestore_db.collection(u'chats').document(str(chat_id)).get().get('users')
+    print(users_list)
+
+    mentions = ''
+    for user_id in users_list:
+        mentions = "  " + mentions + "[" + users_list[user_id] + "](tg://user?id=" + user_id + ")" + "   "
+
+    message = message + mentions
     """
     TODO: implementar firebase y guardar una tabla con los participantes, despues recorrer los participantes
     telegram_user = update.effective_user
@@ -49,10 +57,66 @@ def chilling(update, context):
     mention = "["+user_name+"](tg://user?id="+str(user_id)+")"
     text = 'Hola ' + mention
     """
-    context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode="Markdown")
-# Crear una tabla que guarde los ids de la gente que:
-#   - Hable en el grupo
-#   - Entre o salga del grupo
+    context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+
+
+
+
+# HANDLER
+def listen(update, context):
+    print('Ejecutando Listen')
+    loggerMessage(update.effective_user.id, update.effective_chat.id, update.message.text)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
+
+def unknown(update, context):
+    print('Ejecutando Unknown')
+    context.bot.send_message(chat_id=update.effective_chat.id, text='No se que me estas contando crack')
+
+
+
+
+
+# FUNCIONES
+def logger(command, user, group):
+    print('LOGGER')
+    firestore_db.collection(u'logger').add({'command': command, 'user': user, 'group': group, 'date': time.time()})
+
+
+def loggerMessage(user, group, text):
+    print('LOGGER MESSAGE')
+    firestore_db.collection(u'loggerMessage').add({'text': text, 'user': user, 'group': group, 'date': time.time()})
+
+
+def registerUser(chat_name, chat_id, user_name, user_id):
+    print('REGISTER USER')
+    doc = firestore_db.collection(u'chats').document(str(chat_id)).get()
+    if doc.exists:
+        # Si el documento existe comprobar que el usuario esta en la lista de usuario
+        if doc.get('users').get(str(user_id)):
+            print('el user esta ya metido')
+        else:
+            # si el usuario no existe meterlo en la lista
+            users_array = doc.get('users')
+            users_array[str(user_id)] = user_name
+            firestore_db.collection(u'chats').document(str(chat_id)).update({'users': users_array})
+    else:
+        # El grupo no existe, pues crearlo y meter al usuario en la lista
+        firestore_db.collection(u'chats').document(str(chat_id)).set({'name': chat_name, 'users': {str(user_id): user_name}})
+        print('grupo creado')
+
+
+
+
+def get_url():
+    contents = requests.get('https://random.dog/woof.json').json()
+    url = contents['url']
+    return url
+
+
+
+
+
+
 
 def main():
     print('Iniciando Main')
@@ -88,3 +152,8 @@ def get_image_url():
 
 if __name__=='__main__':
     main()
+
+
+
+
+#TODO:Handler gente que entra y sale del grupo
