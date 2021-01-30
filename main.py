@@ -63,6 +63,21 @@ def mention_all(update, context):
     context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
 
+def cry(update, context):
+    print('Ejecutando cry')
+    logger('cry', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    url = os.getenv('CRY_PHOTO')
+    message = 'A llorar a la lloreria!'
+
+    if len(context.args) == 1:
+        # Añadir mencion al mensaje
+        message = context.args[0] + ' ' + message
+
+    context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=url)
+
+
 # HANDLER
 def listen(update, context):
     print('Ejecutando Listen')
@@ -121,6 +136,7 @@ def main():
     bop_handler = CommandHandler('bop', bop)
     chilling_handler = CommandHandler('chilling', chilling)
     all_handler = CommandHandler('all', mention_all)
+    cry_handler = CommandHandler('cry', cry)
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
 
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -128,6 +144,8 @@ def main():
     dp.add_handler(bop_handler)
     dp.add_handler(chilling_handler)
     dp.add_handler(all_handler)
+    dp.add_handler(cry_handler)
+
     dp.add_handler(listen_handler)
 
     dp.add_handler(unknown_handler)
