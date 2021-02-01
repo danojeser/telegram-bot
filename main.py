@@ -106,7 +106,13 @@ def weather(update, context):
     context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=icon_url)
 
 
+def article(update, context):
+    print('Ejecutando article')
+    logger('article', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
 
+    response = requests.get('https://es.wikipedia.org/wiki/Especial:Aleatoria')
+    context.bot.send_message(chat_id=update.effective_chat.id, text=response.url)
 
 
 # HANDLER
@@ -169,6 +175,9 @@ def main():
     all_handler = CommandHandler('all', mention_all)
     cry_handler = CommandHandler('cry', cry)
     weather_handler = CommandHandler('weather', weather)
+    article_handler = CommandHandler('article', article)
+
+
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
 
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -178,6 +187,7 @@ def main():
     dp.add_handler(all_handler)
     dp.add_handler(cry_handler)
     dp.add_handler(weather_handler)
+    dp.add_handler(article_handler)
 
     dp.add_handler(listen_handler)
 
