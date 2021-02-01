@@ -131,6 +131,14 @@ def taylor(update, context):
     image_url = requests.get('https://api.taylor.rest/image').json()['url']
     context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
 
+def miau(update, context):
+    print('Ejecutando miau')
+    logger('miau', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    url = get_cat_image_url()
+    context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
+
 
 # HANDLER
 def listen(update, context):
@@ -181,6 +189,27 @@ def get_url():
     url = contents['url']
     return url
 
+def get_image_url():
+    allowed_extension = ['jpg', 'jpeg', 'png']
+    file_extension = ''
+    while file_extension not in allowed_extension:
+        url = get_url()
+        file_extension = re.search("([^.]*)$",url).group(1).lower()
+    return url
+
+def get_cat_url():
+    contents = requests.get('https://api.thecatapi.com/v1/images/search').json()
+    url = contents[0]['url']
+    return url
+
+def get_cat_image_url():
+    allowed_extension = ['jpg', 'jpeg', 'png']
+    file_extension = ''
+    while file_extension not in allowed_extension:
+        url = get_cat_url()
+        file_extension = re.search("([^.]*)$",url).group(1).lower()
+    return url
+
 
 def main():
     print('Iniciando Main')
@@ -195,7 +224,7 @@ def main():
     article_handler = CommandHandler('article', article)
     insult_handler = CommandHandler('insult', insult)
     taylor_handler = CommandHandler('taylor', taylor)
-
+    miau_handler = CommandHandler('miau', miau)
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -208,6 +237,7 @@ def main():
     dp.add_handler(article_handler)
     dp.add_handler(insult_handler)
     dp.add_handler(taylor_handler)
+    dp.add_handler(miau_handler)
 
     dp.add_handler(listen_handler)
 
@@ -215,15 +245,6 @@ def main():
 
     updater.start_polling()
     updater.idle()
-
-
-def get_image_url():
-    allowed_extension = ['jpg', 'jpeg', 'png']
-    file_extension = ''
-    while file_extension not in allowed_extension:
-        url = get_url()
-        file_extension = re.search("([^.]*)$",url).group(1).lower()
-    return url
 
 
 if __name__ == '__main__':
