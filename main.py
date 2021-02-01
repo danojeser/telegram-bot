@@ -114,6 +114,23 @@ def article(update, context):
     response = requests.get('https://es.wikipedia.org/wiki/Especial:Aleatoria')
     context.bot.send_message(chat_id=update.effective_chat.id, text=response.url)
 
+def insult(update, context):
+    print('Ejecutando insult')
+    logger('insult', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    response = requests.get('https://evilinsult.com/generate_insult.php?lang=en&type=json').json()
+    context.bot.send_message(chat_id=update.effective_chat.id, text=response['insult'])
+
+def taylor(update, context):
+    print('Ejecutando taylor')
+    logger('taylor', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    quote = requests.get('https://api.taylor.rest/').json()['quote']
+    image_url = requests.get('https://api.taylor.rest/image').json()['url']
+    context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
+
 
 # HANDLER
 def listen(update, context):
@@ -176,10 +193,11 @@ def main():
     cry_handler = CommandHandler('cry', cry)
     weather_handler = CommandHandler('weather', weather)
     article_handler = CommandHandler('article', article)
+    insult_handler = CommandHandler('insult', insult)
+    taylor_handler = CommandHandler('taylor', taylor)
 
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
-
     unknown_handler = MessageHandler(Filters.command, unknown)
 
     dp.add_handler(bop_handler)
@@ -188,6 +206,8 @@ def main():
     dp.add_handler(cry_handler)
     dp.add_handler(weather_handler)
     dp.add_handler(article_handler)
+    dp.add_handler(insult_handler)
+    dp.add_handler(taylor_handler)
 
     dp.add_handler(listen_handler)
 
