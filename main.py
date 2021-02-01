@@ -11,6 +11,7 @@ from firebase_admin import credentials, firestore
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
 
 
 cred = credentials.Certificate("serviceAccountKey.json")
@@ -78,6 +79,36 @@ def cry(update, context):
     context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=url)
 
 
+def weather(update, context):
+    print('Ejecutando weather')
+    logger('weather', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+    selected_city = 'cabra'
+    cities = {
+        'cabra' : '2520645',
+        'sevilla': '2510911',
+        'granada': '2517117',
+        'valencia': '2509954'
+    }
+
+    arg = str(context.args[0]).lower()
+    if len(context.args) > 0 and arg in selected_city:
+        selected_city = arg
+
+    url = 'https://api.openweathermap.org/data/2.5/weather?id=' + cities[selected_city] + '&lang=es&appid=' + OPENWEATHER_API_KEY
+
+    response = requests.get(url).json()
+    weather = response['weather'][0]
+
+    message = response['name'] + ': ' + weather['main'] + ' (' + weather['description'] + ')'
+    icon_url = 'http://openweathermap.org/img/wn/' + weather['icon'] + '@4x.png'
+
+    context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=icon_url)
+
+
+
+
+
 # HANDLER
 def listen(update, context):
     print('Ejecutando Listen')
@@ -137,6 +168,7 @@ def main():
     chilling_handler = CommandHandler('chilling', chilling)
     all_handler = CommandHandler('all', mention_all)
     cry_handler = CommandHandler('cry', cry)
+    weather_handler = CommandHandler('weather', weather)
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
 
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -145,6 +177,7 @@ def main():
     dp.add_handler(chilling_handler)
     dp.add_handler(all_handler)
     dp.add_handler(cry_handler)
+    dp.add_handler(weather_handler)
 
     dp.add_handler(listen_handler)
 
