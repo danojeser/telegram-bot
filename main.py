@@ -12,6 +12,9 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
+SECONDS_DAY = 86400
+SECONDS_WEEK = 604800
+SECONDS_MONTH = 2592000
 
 
 cred = credentials.Certificate("serviceAccountKey.json")
@@ -133,12 +136,31 @@ def miau(update, context):
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
 
 
+def stats(update, context):
+    print('Ejecutando stats')
+    logger('stats', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    effective_user_id = update.effective_user.id
+    effective_chat_id = update.effective_chat.id
+
+    # Total de mensajes enviados
+    message_data = firestore_db.collection(u'loggerMessage').where(u'group', u'==', effective_chat_id).where(u'user', u'==', effective_user_id).get()
+
+    # Total de comandos ejecutado
+    command_data = firestore_db.collection(u'logger').where(u'group', u'==', effective_chat_id).where(u'user', u'==', effective_user_id).get()
+
+    mention = '[' + update.effective_user.first_name + '](tg://user?id=' + str(effective_user_id) + ')'
+
+    message = mention + '\n' +'Numero de mensajes enviados: ' + str(len(message_data)) + '\n' + 'Numero de comandos ejecutados: ' + str(len(command_data))
+
+    context.bot.send_message(chat_id=effective_chat_id, text=message, parse_mode="Markdown")
+
+
 # HANDLER
 def listen(update, context):
     print('Ejecutando Listen')
     logger_message(update.effective_user.id, update.effective_chat.id, update.message.text)
-    context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
-
 
 def unknown(update, context):
     print('Ejecutando Unknown')
@@ -218,6 +240,7 @@ def main():
     insult_handler = CommandHandler('insult', insult)
     taylor_handler = CommandHandler('taylor', taylor)
     miau_handler = CommandHandler('miau', miau)
+    stats_handler = CommandHandler('stats', stats)
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -231,6 +254,7 @@ def main():
     dp.add_handler(insult_handler)
     dp.add_handler(taylor_handler)
     dp.add_handler(miau_handler)
+    dp.add_handler(stats_handler)
 
     dp.add_handler(listen_handler)
 
@@ -245,3 +269,15 @@ if __name__ == '__main__':
 
 
 # TODO: Handler gente que entra y sale del grupo
+
+"""
+bop - Envía una foto aleatoria de un perro
+chilling - Notifica a las personas del grupo de que estas de puto chilling
+all - Menciona a todos los usuarios del grupo
+cry - Envía a la lloreria
+weather - Notifica el tiempo actual en la localidad que le indiques como parámetro
+article - Envía un artículo aleatorio de Wikipedia
+insult - Envía un insulto aleatorio
+taylor - Envía una foto y una frase aleatoria de Taylor Swift
+miau - Envía una foto aleatoria de un gato
+"""
