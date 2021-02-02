@@ -83,28 +83,21 @@ def weather(update, context):
     print('Ejecutando weather')
     logger('weather', update.effective_user.id, update.effective_chat.id)
     register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
-    selected_city = 'cabra'
-    cities = {
-        'cabra' : '2520645',
-        'sevilla': '2510911',
-        'granada': '2517117',
-        'valencia': '2509954'
-    }
+    
+    if len(context.args) > 0:
+        arg = str(context.args[0]).lower()
 
-    arg = str(context.args[0]).lower()
-    if len(context.args) > 0 and arg in selected_city:
-        selected_city = arg
+        url = 'https://api.openweathermap.org/data/2.5/weather?q=' + arg + '&lang=es&appid=' + OPENWEATHER_API_KEY
 
-    url = 'https://api.openweathermap.org/data/2.5/weather?id=' + cities[selected_city] + '&lang=es&appid=' + OPENWEATHER_API_KEY
+        response = requests.get(url).json()
+        weather = response['weather'][0]
 
-    response = requests.get(url).json()
-    weather = response['weather'][0]
+        message = response['name'] + ': ' + weather['main'] + ' (' + weather['description'] + ')'
+        icon_url = 'http://openweathermap.org/img/wn/' + weather['icon'] + '@4x.png'
 
-    message = response['name'] + ': ' + weather['main'] + ' (' + weather['description'] + ')'
-    icon_url = 'http://openweathermap.org/img/wn/' + weather['icon'] + '@4x.png'
-
-    context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=icon_url)
-
+        context.bot.send_photo(chat_id=update.effective_chat.id, caption=message, photo=icon_url)
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text='Te falta la ciudad, bobo')
 
 def article(update, context):
     print('Ejecutando article')
