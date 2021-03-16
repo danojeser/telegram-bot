@@ -2,6 +2,7 @@ import os
 import requests
 import re
 import time
+import random
 from dotenv import load_dotenv
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import firebase_admin
@@ -20,6 +21,53 @@ SECONDS_MONTH = 2592000
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 firestore_db = firestore.client()
+
+aitana_quotes = [
+  "Porque nunca admití estar enamorada, siempre lo supe y no dije nada",
+  "Mi corazón se quiso esconder",
+  "Te juro que esta vez voy a cuidarte",
+  "Quise obligarme a olvidar tu boca y ahora mi boca dirá que si tú regresas",
+  "Solo cuando llueve me buscas, solo cuando hay frío te asustas",
+  "Una llamada perdida fácil se olvida",
+  "No entiendo cómo pudiste borrarme",
+  "Como lo hiciste tú y besa mejor que tú",
+  "All these stupid guys like these stupid, stupid girls",
+  "Dont talk, girl, just listen,keep it to yourself, dont tell em your opinion",
+  "Like popcorn, tasty cant get enough, I want you on the daily",
+  "And I know I should stop but the way that you talk",
+  "No me esperaba verte aquí, sigues jugando con fuego",
+  "Aquí yo me pienso quedar aunque te moleste tener que mirar",
+  "Soy una ventana mirando al mar en un día de invierno",
+  "Se fue, se fue perdiendo y hoy hay silencio",
+  "Fuimos el secreto de una estrella fugaz que no cumplió el deseo",
+  "Me dieron ganas de hablarte y vuelvo a pensarte",
+  "Aunque no lo ves todo es frágil a mis pies",
+  "Obligamos a nuestro corazón a perder la apuesta",
+  "Nos juramos nunca mirar atrás y borrar la cuenta",
+]
+
+aitana_images = [
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-1.jpg?alt=media&token=1832321b-b382-40a3-8f94-43c18ac16da6",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-10.jpeg?alt=media&token=1e67452b-6866-473c-bcfb-ffd6202b893a",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-11.jpg?alt=media&token=e91302e6-20bf-43e5-ba91-db21199b6c82",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-12.jpg?alt=media&token=7c7642c5-453a-4303-b021-64ae3dc0c22a",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-13.jpg?alt=media&token=e4142230-a057-4d49-97e8-5d48b1bdcf0e",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-14.jpg?alt=media&token=a1ae6523-4e4e-427c-a296-c1e85d4046bc",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-15.jpg?alt=media&token=2add52e7-f0e7-4877-846b-1f0d5a6e1fb5",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-16.jpg?alt=media&token=7ba09ad9-061c-488c-9dfa-73556ba2c1e2",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-17.jpg?alt=media&token=8922b732-6800-4b09-8e7f-89f513d7ac91",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-18.jpg?alt=media&token=77e61a52-5430-4804-af62-b582cc5d382a",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-19.jpg?alt=media&token=7613d8e9-15cd-4996-b947-bab8bcff2edc",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-2.jpg?alt=media&token=a2a805fd-cecf-48a7-9166-54563c9c3a08",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-20.jpg?alt=media&token=afa1a137-c46b-41ec-ac2d-f19b453e700d",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-3.jpg?alt=media&token=514be93b-f107-4540-832f-70a0f660cb22",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-4.jpeg?alt=media&token=6da0aff0-0883-47d9-8dc3-3d0c46d9049a",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-5.jpeg?alt=media&token=0e353148-1740-4598-8cdb-77d42f909e50",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-6.jpg?alt=media&token=0c02e90b-3bd4-4bcc-a092-4c837a3acae3",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-7.jpg?alt=media&token=a624e993-9d58-47f0-b968-f0785a3595dd",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-8.jpg?alt=media&token=a1cc3b86-dcf7-4be9-b6b3-ca7c6f3d4e8e",
+  "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-9.jpg?alt=media&token=c513e836-8fe6-495d-a960-02238af41e01",
+];
 
 
 # COMANDOS
@@ -136,6 +184,16 @@ def miau(update, context):
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
 
 
+def aitana(update, context):
+    print('Ejecutando aitana')
+    logger('aitana', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    quote = aitana_quotes[random.randint(0,19)]
+    image_url = aitana_images[random.randint(0, 20)]
+    context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
+
+
 def stats(update, context):
     print('Ejecutando stats')
     logger('stats', update.effective_user.id, update.effective_chat.id)
@@ -240,6 +298,7 @@ def main():
     insult_handler = CommandHandler('insult', insult)
     taylor_handler = CommandHandler('taylor', taylor)
     miau_handler = CommandHandler('miau', miau)
+    aitana_handler = CommandHandler('aitana', aitana)
     stats_handler = CommandHandler('stats', stats)
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
@@ -254,6 +313,7 @@ def main():
     dp.add_handler(insult_handler)
     dp.add_handler(taylor_handler)
     dp.add_handler(miau_handler)
+    dp.add_handler(aitana_handler)
     dp.add_handler(stats_handler)
 
     dp.add_handler(listen_handler)

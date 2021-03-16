@@ -1,7 +1,7 @@
 # telegram-bot
 
 
-pip install python-telegra-bot
+pip install python-telegram-bot
 
 pip install firebase-admin
 
