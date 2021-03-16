@@ -3,10 +3,12 @@ import requests
 import re
 import time
 import random
+import urllib.request
 from dotenv import load_dotenv
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import firebase_admin
 from firebase_admin import credentials, firestore
+from bs4 import BeautifulSoup
 
 
 load_dotenv()
@@ -68,6 +70,10 @@ aitana_images = [
   "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-8.jpg?alt=media&token=a1cc3b86-dcf7-4be9-b6b3-ca7c6f3d4e8e",
   "https://firebasestorage.googleapis.com/v0/b/aitana-api.appspot.com/o/aitana-9.jpg?alt=media&token=c513e836-8fe6-495d-a960-02238af41e01",
 ];
+
+def getElement(text, tag, clase):
+    soup = BeautifulSoup(text, "html.parser")
+    return soup.find_all(tag, class_=clase, id=True)
 
 
 # COMANDOS
@@ -193,6 +199,29 @@ def aitana(update, context):
     image_url = aitana_images[random.randint(0, 20)]
     context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
 
+def receta(update,context):
+    print('Ejecutando receta')
+    logger('receta', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    url = 'https://www.recetasderechupete.com/?s='
+    if len(context.args) > 0:
+
+        for i in range(0, len(context.args)):
+            url = url + str(context.args[i]) + '+'
+
+    read = urllib.request.urlopen(url)
+    div = getElement(read, "div", "pure-g")
+    a = div[0].find_all("a")
+    if len(a) > 0:
+        msg = a[random.randint(0,len(a)-1)]
+        context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text='No he encontrado ninguna receta para la mierda que hayas buscado')
+    
+    
+    
+
 
 def stats(update, context):
     print('Ejecutando stats')
@@ -299,7 +328,9 @@ def main():
     taylor_handler = CommandHandler('taylor', taylor)
     miau_handler = CommandHandler('miau', miau)
     aitana_handler = CommandHandler('aitana', aitana)
+    receta_handler = CommandHandler('receta',receta)
     stats_handler = CommandHandler('stats', stats)
+    
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -314,6 +345,7 @@ def main():
     dp.add_handler(taylor_handler)
     dp.add_handler(miau_handler)
     dp.add_handler(aitana_handler)
+    dp.add_handler(receta_handler)
     dp.add_handler(stats_handler)
 
     dp.add_handler(listen_handler)
