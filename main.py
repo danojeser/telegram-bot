@@ -174,7 +174,7 @@ def receta(update,context):
     div = get_element(read, "div", "pure-g")
     a = div[0].find_all("a")
     if len(a) > 0:
-        msg = a[random.randint(0,len(a)-1)]
+        msg = a[random.randint(0,(len(a)-1)/2)]
         context.bot.send_message(chat_id=update.effective_chat.id, text=msg["href"])
     else:
         context.bot.send_message(chat_id=update.effective_chat.id, text='No he encontrado ninguna receta para la mierda que hayas buscado')
