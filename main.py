@@ -180,6 +180,22 @@ def receta(update,context):
         context.bot.send_message(chat_id=update.effective_chat.id, text='No he encontrado ninguna receta para la mierda que hayas buscado')
 
 
+def desmotivacion(update, context):
+    print('Ejecutando desmotivacion')
+    logger('receta', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    url = 'https://desmotivaciones.es/aleatorio'
+
+    page = requests.get(url)
+    soup = BeautifulSoup(page.content, 'html.parser')
+
+    div_list = soup.find_all('div', class_='align-center')
+    image_url = 'https:' + div_list[1].find('img')['src']
+
+    context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+
+
 def stats(update, context):
     print('Ejecutando stats')
     logger('stats', update.effective_user.id, update.effective_chat.id)
@@ -289,7 +305,8 @@ def main():
     taylor_handler = CommandHandler('taylor', taylor)
     miau_handler = CommandHandler('miau', miau)
     aitana_handler = CommandHandler('aitana', aitana)
-    receta_handler = CommandHandler('receta',receta)
+    receta_handler = CommandHandler('receta', receta)
+    desmotivacion_handler = CommandHandler('desmotivacion', desmotivacion)
     stats_handler = CommandHandler('stats', stats)
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
@@ -306,6 +323,7 @@ def main():
     dp.add_handler(miau_handler)
     dp.add_handler(aitana_handler)
     dp.add_handler(receta_handler)
+    dp.add_handler(desmotivacion_handler)
     dp.add_handler(stats_handler)
 
     dp.add_handler(listen_handler)
