@@ -182,7 +182,7 @@ def receta(update,context):
 
 def desmotivacion(update, context):
     print('Ejecutando desmotivacion')
-    logger('receta', update.effective_user.id, update.effective_chat.id)
+    logger('desmotivacion', update.effective_user.id, update.effective_chat.id)
     register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
 
     url = 'https://desmotivaciones.es/aleatorio'
@@ -194,6 +194,22 @@ def desmotivacion(update, context):
     image_url = 'https:' + div_list[1].find('img')['src']
 
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url)
+
+
+def movie(update, context):
+    print('Ejecutando movie')
+    logger('movie', update.effective_user.id, update.effective_chat.id)
+    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
+
+    urlD = 'https://www.suggestmemovie.com'
+
+    page = requests.get(urlD)
+    soup = BeautifulSoup(page.content, 'html.parser')
+
+    title = soup.find_all('div', class_='col text-center')[0].find('h1').text.strip()
+    image = urlD + soup.find('img', class_='img-fluid img-thumbnail p-3')['src']
+
+    context.bot.send_photo(chat_id=update.effective_chat.id, caption=title, photo=image)
 
 
 def stats(update, context):
@@ -307,6 +323,7 @@ def main():
     aitana_handler = CommandHandler('aitana', aitana)
     receta_handler = CommandHandler('receta', receta)
     desmotivacion_handler = CommandHandler('desmotivacion', desmotivacion)
+    movie_handler = CommandHandler('movie', movie)
     stats_handler = CommandHandler('stats', stats)
 
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
@@ -324,6 +341,7 @@ def main():
     dp.add_handler(aitana_handler)
     dp.add_handler(receta_handler)
     dp.add_handler(desmotivacion_handler)
+    dp.add_handler(movie_handler)
     dp.add_handler(stats_handler)
 
     dp.add_handler(listen_handler)
