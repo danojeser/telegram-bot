@@ -276,7 +276,7 @@ def register_user(chat_name, chat_id, user_name, user_id):
 
 def check_tiktok(update, context):
     if 'tiktok' in update.message.text:
-        context.bot.send_message(chat_id=update.effective_chat.id, text='¿Otro Tiktok? ¿En serio?'
+        context.bot.send_message(chat_id=update.effective_chat.id, text='¿Otro Tiktok? ¿En serio?')
 
 
 def get_url():
