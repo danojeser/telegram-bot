@@ -236,6 +236,7 @@ def stats(update, context):
 # HANDLER
 def listen(update, context):
     print('Ejecutando Listen')
+    check_tiktok(update, context)
     logger_message(update.effective_user.id, update.effective_chat.id, update.message.text)
 
 
@@ -273,7 +274,9 @@ def register_user(chat_name, chat_id, user_name, user_id):
         print('grupo creado')
 
 
-# def mention_all():
+def check_tiktok(update, context):
+    if 'tiktok' in update.message.text:
+        context.bot.send_message(chat_id=update.effective_chat.id, text='¿Otro Tiktok? ¿En serio?'
 
 
 def get_url():
