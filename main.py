@@ -129,16 +129,6 @@ def insult(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text=response['insult'])
 
 
-def taylor(update, context):
-    print('Ejecutando taylor')
-    logger('taylor', update.effective_user.id, update.effective_chat.id)
-    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
-
-    quote = requests.get('https://api.taylor.rest/').json()['quote']
-    image_url = requests.get('https://api.taylor.rest/image').json()['url']
-    context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
-
-
 def miau(update, context):
     print('Ejecutando miau')
     logger('miau', update.effective_user.id, update.effective_chat.id)
@@ -275,7 +265,7 @@ def register_user(chat_name, chat_id, user_name, user_id):
 
 
 def check_tiktok(update, context):
-    if 'tiktok' in update.message.text:
+    if 'tiktok.com' in update.message.text:
         context.bot.send_message(chat_id=update.effective_chat.id, text='¿Otro Tiktok? ¿En serio?')
 
 
@@ -321,7 +311,6 @@ def main():
     weather_handler = CommandHandler('weather', weather)
     article_handler = CommandHandler('article', article)
     insult_handler = CommandHandler('insult', insult)
-    taylor_handler = CommandHandler('taylor', taylor)
     miau_handler = CommandHandler('miau', miau)
     aitana_handler = CommandHandler('aitana', aitana)
     receta_handler = CommandHandler('receta', receta)
@@ -339,7 +328,6 @@ def main():
     dp.add_handler(weather_handler)
     dp.add_handler(article_handler)
     dp.add_handler(insult_handler)
-    dp.add_handler(taylor_handler)
     dp.add_handler(miau_handler)
     dp.add_handler(aitana_handler)
     dp.add_handler(receta_handler)
@@ -369,6 +357,5 @@ cry - Envía a la lloreria
 weather - Notifica el tiempo actual en la localidad que le indiques como parámetro
 article - Envía un artículo aleatorio de Wikipedia
 insult - Envía un insulto aleatorio
-taylor - Envía una foto y una frase aleatoria de Taylor Swift
 miau - Envía una foto aleatoria de un gato
 """
