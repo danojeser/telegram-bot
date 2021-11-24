@@ -1,0 +1,24 @@
+{
+  "name": "telegram-bot",
+  "version": "1.0.0",
+  "description": "Custom telegram bot",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danojeser/telegram-bot.git"
+  },
+  "author": "Daniel Ojeda",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/danojeser/telegram-bot/issues"
+  },
+  "homepage": "https://github.com/danojeser/telegram-bot#readme",
+  "dependencies": {
+    "dotenv": "^10.0.0",
+    "node-telegram-bot-api": "^0.54.0"
+  }
+}
