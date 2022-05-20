@@ -31,16 +31,6 @@ def get_element(text, tag, clase):
 
 
 # COMANDOS
-def bop(update, context):
-    print('Ejecutanto bop')
-    logger('bop', update.effective_user.id, update.effective_chat.id)
-    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
-
-    url = get_image_url()
-
-    context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
-
-
 def chilling(update, context):
     print('Ejecutando Chilling')
     logger('chilling', update.effective_user.id, update.effective_chat.id)
@@ -136,17 +126,6 @@ def miau(update, context):
 
     url = get_cat_image_url()
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
-
-
-def aitana(update, context):
-    print('Ejecutando aitana')
-    logger('aitana', update.effective_user.id, update.effective_chat.id)
-    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
-
-    req = requests.get('http://aitana-api.danojeser.com').json()
-    quote = req['quote']
-    image_url = req['image']
-    context.bot.send_photo(chat_id=update.effective_chat.id, caption=quote, photo=image_url)
 
 
 def receta(update,context):
@@ -304,7 +283,6 @@ def main():
     updater = Updater(TELEGRAM_TOKEN)
     dp = updater.dispatcher
 
-    bop_handler = CommandHandler('bop', bop)
     chilling_handler = CommandHandler('chilling', chilling)
     all_handler = CommandHandler('all', mention_all)
     cry_handler = CommandHandler('cry', cry)
@@ -312,7 +290,6 @@ def main():
     article_handler = CommandHandler('article', article)
     insult_handler = CommandHandler('insult', insult)
     miau_handler = CommandHandler('miau', miau)
-    aitana_handler = CommandHandler('aitana', aitana)
     receta_handler = CommandHandler('receta', receta)
     desmotivacion_handler = CommandHandler('desmotivacion', desmotivacion)
     movie_handler = CommandHandler('movie', movie)
@@ -321,7 +298,6 @@ def main():
     listen_handler = MessageHandler(Filters.text & (~Filters.command), listen)
     unknown_handler = MessageHandler(Filters.command, unknown)
 
-    dp.add_handler(bop_handler)
     dp.add_handler(chilling_handler)
     dp.add_handler(all_handler)
     dp.add_handler(cry_handler)
@@ -329,7 +305,6 @@ def main():
     dp.add_handler(article_handler)
     dp.add_handler(insult_handler)
     dp.add_handler(miau_handler)
-    dp.add_handler(aitana_handler)
     dp.add_handler(receta_handler)
     dp.add_handler(desmotivacion_handler)
     dp.add_handler(movie_handler)
