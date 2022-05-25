@@ -30,6 +30,7 @@ bot.onText(/\/bop/, async function onAudioText(msg) {
     bot.sendPhoto(msg.chat.id, photo);
 });
 
+
 // Comando aitana
 bot.onText(/\/aitana/, async function onAudioText(msg) {
     console.log('Ejecutando aitana');
