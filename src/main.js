@@ -21,15 +21,11 @@ const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
 const bot = new Telegraf(token);
 
-
+/*
 bot.use(async (ctx, next) => {
     console.log('ey use');
-    if (ctx.message.text.includes('tiktok.com')) {
-        ctx.reply("¿Otro Tiktok? ¿En serio?");
-    }
-    await next();
 })
-
+*/
 
 bot.on('text', async (ctx, next) => {
     console.log('logger text');
@@ -42,6 +38,10 @@ bot.on('text', async (ctx, next) => {
     } else {
         // es un mensaje
         await message_logger(ctx.message.from.id, ctx.message.chat.id, ctx.message.text);
+    }
+
+    if (ctx.message.text.includes('tiktok.com')) {
+        ctx.reply("¿Otro Tiktok? ¿En serio?");
     }
     await next();
 });
