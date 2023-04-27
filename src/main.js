@@ -19,7 +19,7 @@ const firestore_db = getFirestore();
 // Variables de entorno
 dotenv.config()
 // replace the value below with the Telegram token you receive from @BotFather
-const token = process.env.TELEGRAM_TOKEN_DEV;
+const token = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
 const bot = new Telegraf(token);
