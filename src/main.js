@@ -4,6 +4,9 @@ import fetch from 'node-fetch';
 import {load} from 'cheerio';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import * as fs from "fs";
+import ffmpeg from "ffmpeg";
+import { Configuration, OpenAIApi } from "openai";
 
 // Initialize Firebase
 const app = initializeApp({
@@ -16,11 +19,16 @@ const firestore_db = getFirestore();
 // Variables de entorno
 dotenv.config()
 // replace the value below with the Telegram token you receive from @BotFather
-const token = process.env.TELEGRAM_TOKEN;
+const token = process.env.TELEGRAM_TOKEN_DEV;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
 const bot = new Telegraf(token);
 
+const configuration = new Configuration({
+    organization: process.env.OPENAI_ORG_ID,
+    apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
 /*
 bot.use(async (ctx, next) => {
     console.log('ey use');
@@ -46,6 +54,36 @@ bot.on('text', async (ctx, next) => {
     await next();
 });
 
+
+bot.on('voice', async (ctx) => {
+    console.log('entrando en voice');
+    let mensaje = 'Otro puto audio';
+    try {
+        const fileId = ctx.message.voice.file_id;
+        const filePath = await bot.telegram.getFileLink(fileId);
+        await downloadAudio(filePath.href, 'audio.mp3');
+        // TODO: Añadir una excepcion que controle que el archivo es del tamaño adecuado
+
+        // TODO: porque esto funciona???
+        const response = await openai.createTranscription(fs.createReadStream('audio.mp3'), 'whisper-1', 'illo, enverda, pue', 'text', 0, 'es');
+
+        mensaje = response.data;
+
+    } catch (error) {
+        console.error(error);
+    }
+
+    await fs.unlink('audio.mp3', err => {
+        if (err) {
+            console.log(err);
+        } else {
+            console.log('Borrado de audio exitoso');
+        }
+    });
+
+    ctx.reply(mensaje, {reply_to_message_id : ctx.message.message_id});
+
+});
 
 // error handling
 bot.catch((err, ctx) => {
@@ -161,7 +199,6 @@ bot.command('/all', async (ctx) => {
 // COMMAND CRY
 bot.command('/cry', async (ctx) => {
     console.log('Ejecutando cry');
-    const chat_id = ctx.chat.id;
 
     // Obtener la URL de la imagen de llorar desde las variables de entorno
     const url = process.env.CRY_PHOTO;
@@ -304,28 +341,28 @@ async function getCatUrl() {
 // función LOGGER
 async function command_logger(user, group, command) {
     console.log('COMMAND LOGGER');
-    await firestore_db.collection('logger').add({
+    /*await firestore_db.collection('logger').add({
         command: command,
         user: user,
         group: group,
         date: Date.now(),
-    });
+    });*/
 }
 
 async function message_logger(user, group, text) {
     console.log('LOGGER MESSAGE');
-    await firestore_db.collection('loggerMessage').add({
+    /*await firestore_db.collection('loggerMessage').add({
         text: text,
         user: user,
         group: group,
         date: Date.now()
-    });
+    });*/
 }
 
 
 // TODO: Que leches hago con esto
 async function register_user(chat_name, chat_id, user_name, user_id) {
-    console.log('REGISTER USER');
+    console.log('REGISTER USER');/*
     const doc = await firestore_db.collection('chats').doc(chat_id.toString()).get();
     if (doc.exists) {
         // Si el documento existe comprobar que el usuario está en la lista de usuario
@@ -342,9 +379,28 @@ async function register_user(chat_name, chat_id, user_name, user_id) {
         const data = { name: chat_name, users: { [user_id]: user_name } };
         await firestore_db.collection('chats').doc(chat_id.toString()).set(data);
         console.log('grupo creado');
-    }
+    }*/
 }
 
+
+async function downloadAudio (url, outputFilePath) {
+    const response = await fetch(url);
+    const buffer = await response.buffer();
+
+    await fs.writeFileSync('audio.oga', buffer);
+
+    try {
+        const audio = await new ffmpeg('audio.oga');
+        await audio.save(outputFilePath, {
+            codec: 'libmp3lame',
+            bitrate: '192k',
+
+        });
+        console.log(`El archivo se ha convertido exitosamente a ${outputFilePath}`);
+    } catch (e) {
+        console.log(`Hubo un error al convertir el archivo: ${e.message}`);
+    }
+}
 
 
 
@@ -384,3 +440,4 @@ bot.command("/bop", async (ctx) => {
 });
 Solo tienes que contestar "ok", si has entendido lo que te he dicho.
 */
+
