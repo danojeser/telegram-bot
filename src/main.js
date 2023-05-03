@@ -6,7 +6,7 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as fs from "fs";
 import ffmpeg from "ffmpeg";
-import { Configuration, OpenAIApi } from "openai";
+import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageRequestResponseFormatEnum } from "openai";
 
 // Initialize Firebase
 const app = initializeApp({
@@ -308,6 +308,28 @@ bot.command("/stats", async (ctx) => {
     ctx.replyWithMarkdown(message);
 });
 
+
+// COMANDO AITANA
+bot.command("/aitana", async (ctx) => {
+    console.log('Ejecutando aitana');
+    // hacer peticion
+    const response = await fetch(process.env.URL_AITANA_API);
+    const data = await response.json();
+
+    await ctx.replyWithPhoto({url: data.image}, {caption: data.quote});
+});
+
+
+// COMANDO IMAGEN
+bot.command("/imagen", async (ctx) => {
+    console.log('Ejecutando imagen');
+    let prompt = getArgCommand(ctx.message.text);
+    // hacer peticion
+    const response = await openai.createImage({prompt: prompt, n: 1, response_format: CreateImageRequestResponseFormatEnum.Url, size: CreateImageRequestSizeEnum._512x512 });
+    const url = response.data.data[0].url;
+
+    await ctx.replyWithPhoto({url: url});
+});
 
 bot.launch();
 
