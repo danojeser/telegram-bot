@@ -21,6 +21,7 @@ dotenv.config()
 // replace the value below with the Telegram token you receive from @BotFather
 const token = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
+const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
 const bot = new Telegraf(token);
 
@@ -50,6 +51,9 @@ bot.on('text', async (ctx, next) => {
 
     if (ctx.message.text.includes('tiktok.com')) {
         ctx.reply("¿Otro Tiktok? ¿En serio?");
+    }
+    if (ctx.message.text.includes('/reel/')) {
+        ctx.reply(TEXTREEL);
     }
     await next();
 });
