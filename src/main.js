@@ -36,6 +36,41 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 
+const compareByName = (a, b) => {
+    const nameA = a.command.toUpperCase();
+    const nameB = b.command.toUpperCase();
+
+    if (nameA < nameB) {
+        return -1;
+    }
+    if (nameA > nameB) {
+        return 1;
+    }
+
+    return 0;
+};
+
+
+const listaComandos = [
+    { command: "bop", description: "Imagen de perrete"},
+    { command: "weather", description: "El tiempo que hace"},
+    { command: "article", description: "Articulo random de Wikipedia"},
+    { command: "miau", description: "Imagen de gatete"},
+    { command: "chilling", description: "Avisa a todo el mundo de que estas chilling"},
+    { command: "all", description: "Menciona a todo el mundo"},
+    { command: "cry", description: "Indica a una persona donde llorar"},
+    { command: "insult", description: "Insulto random"},
+    { command: "receta", description: "Busca una receta con el ingrediente indicado"},
+    { command: "desmotivacion", description: "Desmotivación random"},
+    { command: "movie", description: "Recomendacion de una pelicula"},
+    { command: "stats", description: "Tus stats en este chat"},
+    { command: "aitana", description: "Imagen y quote de Aitana"},
+    { command: "imagen", description: "Imagen generada por IA"},
+];
+
+await bot.api.setMyCommands(listaComandos.sort(compareByName));
+
+
 bot.on('message:text', async (ctx, next) => {
     console.log('logger text');
     // Comprobar si es un comando el mensaje que envia
