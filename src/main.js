@@ -1,4 +1,3 @@
-import { Telegraf } from 'telegraf';
 import dotenv from "dotenv";
 import fetch from 'node-fetch';
 import {load} from 'cheerio';
@@ -7,6 +6,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 import * as fs from "fs";
 import ffmpeg from "ffmpeg";
 import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageRequestResponseFormatEnum } from "openai";
+import { Bot} from "grammy";
+import { hydrateFiles } from "@grammyjs/files";
+import { Menu, MenuRange } from '@grammyjs/menu'
 
 // Initialize Firebase
 const app = initializeApp({
@@ -18,25 +20,23 @@ const firestore_db = getFirestore();
 
 // Variables de entorno
 dotenv.config()
-// replace the value below with the Telegram token you receive from @BotFather
-const token = process.env.TELEGRAM_TOKEN;
+const TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
-const bot = new Telegraf(token);
+
+// Objeto del BOT
+const bot = new Bot(TOKEN);
+bot.api.config.use(hydrateFiles(bot.token));
+
 
 const configuration = new Configuration({
     organization: process.env.OPENAI_ORG_ID,
     apiKey: process.env.OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(configuration);
-/*
-bot.use(async (ctx, next) => {
-    console.log('ey use');
-})
-*/
 
-bot.on('text', async (ctx, next) => {
+bot.on('message:text', async (ctx, next) => {
     console.log('logger text');
     // Comprobar si es un comando el mensaje que envia
     if (ctx.message.text.startsWith("/")) {
@@ -50,59 +50,61 @@ bot.on('text', async (ctx, next) => {
     }
 
     if (ctx.message.text.includes('tiktok.com')) {
-        ctx.reply("¿Otro Tiktok? ¿En serio?");
+        await ctx.reply("¿Otro Tiktok? ¿En serio?");
     }
-    if (ctx.message.text.includes('/reel/')) {
-        ctx.reply(TEXTREEL);
+    if (ctx.message.text.includes('/reel/') || ctx.message.text.includes('/reels/')) {
+        await ctx.reply(TEXTREEL);
     }
     await next();
 });
 
 
-bot.on('voice', async (ctx) => {
+bot.on(':voice', async (ctx) => {
     console.log('entrando en voice');
     let mensaje = 'Otro puto audio';
+
     try {
-        const fileId = ctx.message.voice.file_id;
-        const filePath = await bot.telegram.getFileLink(fileId);
-        await downloadAudio(filePath.href, 'audio.mp3');
+        const file = await ctx.getFile();
+        const filePath = await file.getUrl();
+
+        await downloadAudio(filePath, 'audio.mp3');
         // TODO: Añadir una excepcion que controle que el archivo es del tamaño adecuado
 
         // TODO: porque esto funciona???
         const response = await openai.createTranscription(fs.createReadStream('audio.mp3'), 'whisper-1', 'illo, enverda, pue', 'text', 0, 'es');
 
-        mensaje = response.data;
+        // TODO: meter un catch o un algo en el caso de bug de audio testeado desde mac
+        mensaje = response.data !== '' ? response.data : mensaje;
 
+        await fs.unlink('audio.mp3', err => {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log('Borrado de audio exitoso');
+            }
+        });
+
+        await ctx.reply(mensaje, {reply_to_message_id : ctx.message.message_id});
     } catch (error) {
         console.error(error);
+        return ctx.reply('Ostias, ya me he roto. El puto bug raro del audio.');
     }
-
-    await fs.unlink('audio.mp3', err => {
-        if (err) {
-            console.log(err);
-        } else {
-            console.log('Borrado de audio exitoso');
-        }
-    });
-
-    ctx.reply(mensaje, {reply_to_message_id : ctx.message.message_id});
-
 });
 
 // error handling
-bot.catch((err, ctx) => {
+bot.catch(async (err) => {
     console.log(err);
-    return ctx.reply(`Ostias, ya me he roto ${ctx.updateType}`, err);
+    await err.ctx.reply('Ostias, ya me he roto');
 });
 
 // initialize the commands
-bot.command("/start", (ctx) => {
-    ctx.reply("Hola Mundo!!");
+bot.command("start", async (ctx) => {
+    await ctx.reply("Hola Mundo!!");
 });
 
 
 // COMANDO BOP
-bot.command("/bop", async (ctx) => {
+bot.command("bop", async (ctx) => {
     console.log("Ejecutando bop");
     // hacer peticion
     const allowedExtensions = ['jpg', 'jpeg', 'png'];
@@ -117,11 +119,11 @@ bot.command("/bop", async (ctx) => {
           photo = data.url;
       }
 
-    ctx.replyWithPhoto({url:photo});
+    await ctx.replyWithPhoto(photo);
 });
 
 // COMANDO WEATHER - Esta es mi y funcionaba, mezcla con GPT
-bot.command("/weather",  async (ctx) => {
+bot.command("weather",  async (ctx) => {
    console.log("Ejecutando weather");
    const arg = getArgCommand(ctx.message.text);
 
@@ -135,30 +137,30 @@ bot.command("/weather",  async (ctx) => {
 
        const icon_url = `http://openweathermap.org/img/wn/${weather.icon}@4x.png`;
 
-       await ctx.replyWithPhoto({url: icon_url}, {caption: message});
+       await ctx.replyWithPhoto(icon_url, {caption: message});
    } else {
-       ctx.reply("A ver bobin, me escribes la ciudad");
+       await ctx.reply("A ver bobin, me escribes la ciudad");
    }
 });
 
 
 // COMANDO ARTICLE
-bot.command('/article', async (ctx) => {
+bot.command('article', async (ctx) => {
     console.log('Ejecutando article');
     const response = await fetch('https://es.wikipedia.org/wiki/Especial:Aleatoria');
-    ctx.reply(response.url);
+    await ctx.reply(response.url);
 });
 
 // COMMAND MIAU
-bot.command('/miau', async ctx => {
+bot.command('miau', async ctx => {
     console.log('Ejecutando miau');
 
     const url = await getCatUrl();
-    ctx.replyWithPhoto({url:url});
+    await ctx.replyWithPhoto(url);
 });
 
 // COMMAND CHILLING
-bot.command('/chilling', async (ctx) => {
+bot.command('chilling', async (ctx) => {
     console.log('Ejecutando Chilling');
     const chat_id = ctx.chat.id;
 
@@ -175,11 +177,11 @@ bot.command('/chilling', async (ctx) => {
     }
 
     const message = `${ctx.from.first_name}: ${process.env.CHILLING_MESSAGE || ''} ${mentions}`;
-    ctx.replyWithMarkdown(message);
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
 // COMMAND ALL
-bot.command('/all', async (ctx) => {
+bot.command('all', async (ctx) => {
     console.log('Ejecutando all');
     const chat_id = ctx.chat.id;
 
@@ -195,13 +197,14 @@ bot.command('/all', async (ctx) => {
         }
     }
 
-    const message = `¡Ey! ${mentions}`;
-    ctx.replyWithMarkdown(message);
+    const message = `¡Ey\! ${mentions}`;
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
 
 // COMMAND CRY
-bot.command('/cry', async (ctx) => {
+bot.command('cry', async (ctx) => {
+    // TODO: Hacer que el bot responda al mensaje que se indica
     console.log('Ejecutando cry');
 
     // Obtener la URL de la imagen de llorar desde las variables de entorno
@@ -215,21 +218,25 @@ bot.command('/cry', async (ctx) => {
         message = `${mention} ${message}`;
     }
 
-    ctx.replyWithPhoto({ url: url, caption: message });
+    if (ctx.message.reply_to_message?.message_id) {
+        await ctx.replyWithPhoto(url, {caption: message, reply_to_message_id: ctx.message.reply_to_message.message_id});
+    } else {
+        await ctx.replyWithPhoto(url, {caption: message});
+    }
 });
 
 
 // COMMAND INSULT - GPT
-bot.command('/insult', async (ctx) => {
+bot.command('insult', async (ctx) => {
     console.log('Ejecutando insult');
     const response = await fetch('https://evilinsult.com/generate_insult.php?lang=en&type=json');
     const data = await response.json();
-    ctx.reply(data.insult);
+    await ctx.reply(data.insult);
 });
 
 
 // COMANDO RECETA
-bot.command('/receta', async (ctx) => {
+bot.command('receta', async (ctx) => {
     console.log('Ejecutando receta');
 
     let url = 'https://www.recetasderechupete.com/?s=';
@@ -249,15 +256,15 @@ bot.command('/receta', async (ctx) => {
     if (links.length > 0) {
         const randomIndex = Math.floor(Math.random() * links.length);
         const link = links[randomIndex].attribs.href;
-        ctx.reply(link);
+        await ctx.reply(link);
     } else {
-        ctx.reply('No he encontrado ninguna receta para lo que has buscado');
+        await ctx.reply('No he encontrado ninguna receta para lo que has buscado');
     }
 });
 
 
 // COMANDO DESMOTIVACION
-bot.command('/desmotivacion', async (ctx) => {
+bot.command('desmotivacion', async (ctx) => {
     console.log('Ejecutando desmotivacion');
     // hacer petición
     const url = 'http://desmotivaciones.es/aleatorio';
@@ -269,12 +276,12 @@ bot.command('/desmotivacion', async (ctx) => {
     const img = $('div.align-center > a > img').eq(1);
     const imageUrl = 'http:' + img.attr('src');
 
-    ctx.replyWithPhoto({url: imageUrl});
+    await ctx.replyWithPhoto(imageUrl);
 });
 
 
 // COMANDO MOVIE
-bot.command('/movie', async (ctx) => {
+bot.command('movie', async (ctx) => {
     console.log('Ejecutando movie');
     // hacer petición
     const url = 'https://randommer.io/random-movies';
@@ -287,13 +294,13 @@ bot.command('/movie', async (ctx) => {
     const title = $('div.caption').first().text().trim();
     const image = baseUrl + $('picture > source').first().attr('srcset').replace(".webp", ".jpg");
 
-    ctx.replyWithPhoto({url: image}, {caption: title});
+    await ctx.replyWithPhoto(image, {caption: title});
 });
 
 
 
 // COMANDO STATS
-bot.command("/stats", async (ctx) => {
+bot.command("stats", async (ctx) => {
     console.log("Ejecutando stats");
     // obtener ID de usuario y chat
     const effective_user_id = ctx.from.id;
@@ -309,33 +316,33 @@ bot.command("/stats", async (ctx) => {
 
     const message = mention + '\n' +'Numero de mensajes enviados: ' + message_data.size + '\n' + 'Numero de comandos ejecutados: ' + command_data.size;
 
-    ctx.replyWithMarkdown(message);
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
 
 // COMANDO AITANA
-bot.command("/aitana", async (ctx) => {
+bot.command("aitana", async (ctx) => {
     console.log('Ejecutando aitana');
     // hacer peticion
     const response = await fetch(process.env.URL_AITANA_API);
     const data = await response.json();
 
-    await ctx.replyWithPhoto({url: data.image}, {caption: data.quote});
+    await ctx.replyWithPhoto(data.image, {caption: data.quote});
 });
 
 
 // COMANDO IMAGEN
-bot.command("/imagen", async (ctx) => {
+bot.command("imagen", async (ctx) => {
     console.log('Ejecutando imagen');
     let prompt = getArgCommand(ctx.message.text);
     // hacer peticion
     const response = await openai.createImage({prompt: prompt, n: 1, response_format: CreateImageRequestResponseFormatEnum.Url, size: CreateImageRequestSizeEnum._512x512 });
     const url = response.data.data[0].url;
 
-    await ctx.replyWithPhoto({url: url});
+    await ctx.replyWithPhoto(url);
 });
 
-bot.launch();
+bot.start();
 
 
 function getArgCommand(text) {
