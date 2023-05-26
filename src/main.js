@@ -409,28 +409,28 @@ async function getCatUrl() {
 // función LOGGER
 async function command_logger(user, group, command) {
     console.log('COMMAND LOGGER');
-    /*await firestore_db.collection('logger').add({
+    await firestore_db.collection('logger').add({
         command: command,
         user: user,
         group: group,
         date: Date.now(),
-    });*/
+    });
 }
 
 async function message_logger(user, group, text) {
     console.log('LOGGER MESSAGE');
-    /*await firestore_db.collection('loggerMessage').add({
+    await firestore_db.collection('loggerMessage').add({
         text: text,
         user: user,
         group: group,
         date: Date.now()
-    });*/
+    });
 }
 
 
 // TODO: Que leches hago con esto
 async function register_user(chat_name, chat_id, user_name, user_id) {
-    console.log('REGISTER USER');/*
+    console.log('REGISTER USER');
     const doc = await firestore_db.collection('chats').doc(chat_id.toString()).get();
     if (doc.exists) {
         // Si el documento existe comprobar que el usuario está en la lista de usuario
@@ -447,7 +447,7 @@ async function register_user(chat_name, chat_id, user_name, user_id) {
         const data = { name: chat_name, users: { [user_id]: user_name } };
         await firestore_db.collection('chats').doc(chat_id.toString()).set(data);
         console.log('grupo creado');
-    }*/
+    }
 }
 
 
@@ -469,43 +469,3 @@ async function downloadAudio (url, outputFilePath) {
         console.log(`Hubo un error al convertir el archivo: ${e.message}`);
     }
 }
-
-
-
-
-/*
-Contexto: eres un asistente de programacion experto en python y nodejs, me estas ayudando a traducir un script de python a nodejs. Te voy a dar un ejemplo de una funcion traducida para que me ayudes en otras funciones. 
-En Python estoy telegram.ext
-y en node: telegraf
-Funcion en python:
-def bop(update, context):
-    print('Ejecutanto bop')
-    logger('bop', update.effective_user.id, update.effective_chat.id)
-    register_user(update.effective_chat.title, update.effective_chat.id, update.effective_user.first_name, update.effective_user.id)
-
-    url = get_image_url()
-
-    context.bot.send_photo(chat_id=update.effective_chat.id, photo=url)
-
-La misma funcion pero en node: 
-// COMANDO BOP
-bot.command("/bop", async (ctx) => {
-    console.log("Ejecutando bop");
-    // hacer peticion
-    const allowedExtensions = ['jpg', 'jpeg', 'png'];
-      let fileExtesion = '';
-      let photo = '';
-
-      while (!allowedExtensions.includes(fileExtesion)) {
-          const response = await fetch('https://random.dog/woof.json');
-          const data = await response.json();
-          fileExtesion = data.url.split('.')[data.url.split('.').length - 1];
-
-          photo = data.url;
-      }
-
-    ctx.replyWithPhoto({url:photo});
-});
-Solo tienes que contestar "ok", si has entendido lo que te he dicho.
-*/
-
