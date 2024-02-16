@@ -394,7 +394,7 @@ bot.command("server", async (ctx) => {
     // TODO: crear una lista que tenga el nombre del server y la ip que tiene asociada para poder hacerlo facil para no tocar codigo cuando haya nuevo server
     console.log('Ejecutando server');
 
-    let message = 'Texto vacio';
+    let message = 'Texto vacio. Algo ha ido mal.';
     const listaJuegos = {
         'minecraft': '25565',
         'terraria': '7777',
@@ -408,16 +408,13 @@ bot.command("server", async (ctx) => {
         await exec(comando, (error, stdout, stderr) => {
             if (stderr.includes('succeeded')) {
                 // server encendido
-                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta encendido`;
-            } else {
-                // server apagado
-                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta apagado`;
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} está encendido`;
             }
 
             if (error) {
-                message = 'Ha habido un error, Dani arréglame';
-                console.log(`error: ${error.message}`);
-                // return;
+                // El comando NC indica que que si no hay respuesta hay un error en el comando
+                // server apagado
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} está apagado`;
             }
 
             ctx.reply(message, { parse_mode: "MarkdownV2" });
