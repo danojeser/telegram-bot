@@ -9,6 +9,7 @@ import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageReques
 import { Bot} from "grammy";
 import { hydrateFiles } from "@grammyjs/files";
 import { Menu, MenuRange } from '@grammyjs/menu'
+import { exec } from 'child_process';
 
 // Initialize Firebase
 const app = initializeApp({
@@ -102,13 +103,24 @@ bot.on(':voice', async (ctx) => {
         const file = await ctx.getFile();
         const filePath = await file.getUrl();
 
+        // Control de que no exista el mp3, porque si existe se peta
+        if (fs.existsSync(filePath)) {
+            await fs.unlink('audio.mp3', err => {
+                if (err) {
+                    console.log(err);
+                } else {
+                    console.log('Borrado preventivo de audio exitoso');
+                }
+            });
+        }
+
         await downloadAudio(filePath, 'audio.mp3');
         // TODO: Añadir una excepcion que controle que el archivo es del tamaño adecuado
 
         // TODO: porque esto funciona???
         const response = await openai.createTranscription(fs.createReadStream('audio.mp3'), 'whisper-1', 'illo, enverda, pue', 'text', 0, 'es');
 
-        // TODO: meter un catch o un algo en el caso de bug de audio testeado desde mac
+        // TODO: meter un catch o un algo en el caso de bug de audio testeado desde mac, no se de que bug hablo, gracias Dani del pasado
         mensaje = response.data !== '' ? response.data : mensaje;
 
         await fs.unlink('audio.mp3', err => {
@@ -309,8 +321,7 @@ bot.command('desmotivacion', async (ctx) => {
     const $ = load(html);
 
     const img = $('div.align-center > a > img').eq(1);
-    const imageUrl = 'http:' + img.attr('src');
-
+    const imageUrl = img.attr('src');
     await ctx.replyWithPhoto(imageUrl);
 });
 
@@ -375,6 +386,49 @@ bot.command("imagen", async (ctx) => {
     const url = response.data.data[0].url;
 
     await ctx.replyWithPhoto(url);
+});
+
+
+// COMANDO SERVER
+bot.command("server", async (ctx) => {
+    // TODO: crear una lista que tenga el nombre del server y la ip que tiene asociada para poder hacerlo facil para no tocar codigo cuando haya nuevo server
+    console.log('Ejecutando server');
+
+    let message = 'Texto vacio';
+    const listaJuegos = {
+        'minecraft': '25565',
+        'terraria': '7777',
+        'palworld': '8211'
+    };
+    const arg = getArgCommand(ctx.message.text).toLowerCase();
+
+    if (arg !== ctx.message.text && listaJuegos.hasOwnProperty(arg)) {
+        let comando = `nc -vz -w 1 ${process.env.IP_SERVER_GAMES} ${listaJuegos[arg]}`;
+
+        await exec(comando, (error, stdout, stderr) => {
+            if (error) {
+                message = 'Ha habido un error, Dani arréglame';
+                console.log(`error: ${error.message}`);
+                // return;
+            }
+            if (stderr) {
+                message = 'Ha habido un error, Dani arréglame';
+                console.log(`stderr: ${stderr}`);
+                // return;
+            }
+            if (stdout.includes('succeeded')) {
+                // server encendido
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta encendido.`;
+            } else {
+                // server apagado
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta apagado.`;
+            }
+
+            ctx.reply(message, { parse_mode: "MarkdownV2" });
+        });
+    } else {
+        await ctx.reply("A ver bobín, me escribes un juego válido");
+    }
 });
 
 bot.start();
