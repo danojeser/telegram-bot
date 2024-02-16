@@ -406,22 +406,18 @@ bot.command("server", async (ctx) => {
         let comando = `nc -vz -w 1 ${process.env.IP_SERVER_GAMES} ${listaJuegos[arg]}`;
 
         await exec(comando, (error, stdout, stderr) => {
+            if (stderr.includes('succeeded')) {
+                // server encendido
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta encendido`;
+            } else {
+                // server apagado
+                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta apagado`;
+            }
+
             if (error) {
                 message = 'Ha habido un error, Dani arréglame';
                 console.log(`error: ${error.message}`);
                 // return;
-            }
-            if (stderr) {
-                message = 'Ha habido un error, Dani arréglame';
-                console.log(`stderr: ${stderr}`);
-                // return;
-            }
-            if (stdout.includes('succeeded')) {
-                // server encendido
-                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta encendido.`;
-            } else {
-                // server apagado
-                message = `El servidor de ${arg.charAt(0).toUpperCase() + arg.slice(1)} esta apagado.`;
             }
 
             ctx.reply(message, { parse_mode: "MarkdownV2" });
