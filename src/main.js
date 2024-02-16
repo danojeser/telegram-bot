@@ -398,7 +398,7 @@ bot.command("server", async (ctx) => {
     const listaJuegos = {
         'minecraft': '25565',
         'terraria': '7777',
-        'palworld': '8211'
+        'palworld': '25575' // pingeamos el rconport porque no acepta por el otro 
     };
     const arg = getArgCommand(ctx.message.text).toLowerCase();
 
