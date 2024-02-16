@@ -21,7 +21,7 @@ const firestore_db = getFirestore();
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN;
+const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
@@ -244,7 +244,7 @@ bot.command('all', async (ctx) => {
         }
     }
 
-    const message = `¡Ey\! ${mentions}`;
+    const message = `\¡Ey\\! ${mentions}`;
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
