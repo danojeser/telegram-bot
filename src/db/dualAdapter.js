@@ -146,6 +146,14 @@ class DualAdapter {
         // Query data from SQLite since it has better date/time functions for this task
         return await this.sqlite.getCommandCountsByMonth(chatId, userId, monthsLimit);
     }
+
+    // Get command count by month for a specific year
+    async getCommandCountsByYear(chatId, userId, year) {
+        console.log('DUAL GET COMMAND COUNTS BY YEAR');
+        
+        // Query data from SQLite for a specific year
+        return await this.sqlite.getCommandCountsByYear(chatId, userId, year);
+    }
 }
 // Create a singleton instance
 const dualAdapter = new DualAdapter();

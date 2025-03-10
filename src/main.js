@@ -14,7 +14,7 @@ import * as path from 'path';
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
+const TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
@@ -61,6 +61,7 @@ const listaComandos = [
     { command: "imagen", description: "Imagen generada por IA"},
     { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
     { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
+    { command: "yearstats", description: "Gráfica de comandos por mes de un año específico"},
 ];
 
 await bot.api.setMyCommands(listaComandos.sort(compareByName));
@@ -485,6 +486,57 @@ bot.command("commandstats", async (ctx) => {
     } catch (error) {
         console.error('Error generating command stats:', error);
         await ctx.reply('Hubo un error al generar la gráfica de estadísticas');
+    }
+});
+
+// COMANDO YEARSTATS
+bot.command("yearstats", async (ctx) => {
+    console.log('Ejecutando yearstats');
+    
+    try {
+        // Get chat ID and user ID
+        const chatId = ctx.chat.id;
+        const userId = ctx.from.id;
+        
+        // Get the year from the command text
+        const commandText = ctx.message.text;
+        const parts = commandText.split(' ');
+        
+        // Check if a year was provided
+        if (parts.length < 2) {
+            return await ctx.reply("Por favor, especifica un año. Ejemplo: /yearstats 2023");
+        }
+        
+        // Parse the year
+        const year = parts[1].trim();
+        const yearNum = parseInt(year);
+        
+        // Validate the year
+        const currentYear = new Date().getFullYear();
+        if (isNaN(yearNum) || yearNum < 1969 || yearNum > currentYear) {
+            return await ctx.reply(`Por favor, especifica un año válido entre 1969 y ${currentYear}`);
+        }
+        
+        // Get command counts by month for the specified year
+        const stats = await dualAdapter.getCommandCountsByYear(chatId, userId, year);
+        
+        if (stats.every(item => item.count === 0)) {
+            return await ctx.reply(`No hay datos de comandos para el año ${year}`);
+        }
+        
+        // Generate bar graph image
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "Este chat", "comandos");
+        
+        // Send the image using a file read stream
+        await ctx.replyWithPhoto(new InputFile(imagePath));
+        
+        // Delete the temporary file
+        fs.unlink(imagePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+    } catch (error) {
+        console.error('Error generating year stats:', error);
+        await ctx.reply('Hubo un error al generar la gráfica de estadísticas por año');
     }
 });
 

@@ -268,6 +268,54 @@ class SQLiteAdapter {
             .map(([month, count]) => ({ month, count }))
             .sort((a, b) => a.month.localeCompare(b.month));
     }
+
+    // Get command counts by month for a specific year
+    async getCommandCountsByYear(chatId, userId, year) {
+        const db = await this.connect();
+        
+        // Calculate timestamps for the start and end of the specified year
+        const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
+        const endDate = new Date(`${parseInt(year) + 1}-01-01T00:00:00.000Z`);
+        const startTimestamp = startDate.getTime();
+        const endTimestamp = endDate.getTime();
+        
+        // Get ALL command logs from database for this user and chat (no date filtering)
+        const logs = await db.all(
+            'SELECT date FROM message_logs WHERE group_id = ? AND user_id = ?',
+            [chatId, userId]
+        );
+        
+        // Initialize month counts for all months in the year
+        const monthCounts = {};
+        
+        // Initialize all 12 months with zero counts
+        for (let i = 0; i < 12; i++) {
+            const monthKey = `${year}-${String(i + 1).padStart(2, '0')}`;
+            monthCounts[monthKey] = 0;
+        }
+        
+        // Count commands by month with date filtering in code
+        for (const log of logs) {
+            const logDate = log.date;
+            
+            // Skip if the log date is outside our target year
+            if (logDate < startTimestamp || logDate >= endTimestamp) {
+                continue;
+            }
+            
+            const date = new Date(logDate);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (monthCounts[monthKey] !== undefined) {
+                monthCounts[monthKey]++;
+            }
+        }
+        
+        // Convert to array of objects sorted by month
+        return Object.entries(monthCounts)
+            .map(([month, count]) => ({ month, count }))
+            .sort((a, b) => a.month.localeCompare(b.month));
+    }
 }
 
 // Create a singleton instance
