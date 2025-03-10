@@ -5,6 +5,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "node src/main.js",
+    "migrate": "node migrate.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -29,6 +30,8 @@
     "node-fetch": "^3.1.0",
     "node-telegram-bot-api": "^0.54.0",
     "openai": "^3.2.1",
+    "sqlite": "^4.2.1",
+    "sqlite3": "^5.1.7",
     "telegraf": "^4.8.2"
   },
   "type": "module"

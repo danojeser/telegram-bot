@@ -1,27 +1,17 @@
 import dotenv from "dotenv";
 import fetch from 'node-fetch';
 import {load} from 'cheerio';
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
 import * as fs from "fs";
 import ffmpeg from "ffmpeg";
 import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageRequestResponseFormatEnum } from "openai";
 import { Bot} from "grammy";
 import { hydrateFiles } from "@grammyjs/files";
-import { Menu, MenuRange } from '@grammyjs/menu'
 import { exec } from 'child_process';
-
-// Initialize Firebase
-const app = initializeApp({
-    credential: cert('./serviceAccountKey.json')
-});
-
-// Initialize Cloud Firestore and get a reference to the service
-const firestore_db = getFirestore();
+import dualAdapter from './db/dualAdapter.js';
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN;
+const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
@@ -29,7 +19,6 @@ const TEXTREEL = process.env.TEXT_INSTAGRAM;
 // Objeto del BOT
 const bot = new Bot(TOKEN);
 bot.api.config.use(hydrateFiles(bot.token));
-
 
 const configuration = new Configuration({
     organization: process.env.OPENAI_ORG_ID,
@@ -74,15 +63,25 @@ await bot.api.setMyCommands(listaComandos.sort(compareByName));
 
 bot.on('message:text', async (ctx, next) => {
     console.log('logger text');
+    
+    // Register the user when they send a message
+    const chatName = ctx.chat.title || `Private chat with ${ctx.from.first_name}`;
+    const chatId = ctx.chat.id;
+    const userName = ctx.from.username ? ctx.from.username : ctx.from.first_name;
+    const userId = ctx.from.id;
+    
+    // Register user in both databases
+    await dualAdapter.registerUser(chatName, chatId, userName, userId);
+    
     // Comprobar si es un comando el mensaje que envia
     if (ctx.message.text.startsWith("/")) {
         // es un comando
         const comando = ctx.message.text.replace("/", "").split(" ")[0];
-        await command_logger(ctx.message.from.id, ctx.message.chat.id, comando);
+        await dualAdapter.commandLogger(ctx.message.from.id, ctx.message.chat.id, comando);
         // TODO: en el caso de ser un comando, comprobar si es un comando que conocemos
     } else {
         // es un mensaje
-        await message_logger(ctx.message.from.id, ctx.message.chat.id, ctx.message.text);
+        await dualAdapter.messageLogger(ctx.message.from.id, ctx.message.chat.id, ctx.message.text);
     }
 
     if (ctx.message.text.includes('tiktok.com')) {
@@ -211,9 +210,8 @@ bot.command('chilling', async (ctx) => {
     console.log('Ejecutando Chilling');
     const chat_id = ctx.chat.id;
 
-    // Obtener la lista de usuarios del chat desde Firestore
-    const doc = await firestore_db.collection('chats').doc(chat_id.toString()).get();
-    const users_list = doc.data().users;
+    // Get users from dual adapter
+    const users_list = await dualAdapter.getChatUsers(chat_id);
 
     let mentions = '';
     for (const user_id in users_list) {
@@ -232,9 +230,8 @@ bot.command('all', async (ctx) => {
     console.log('Ejecutando all');
     const chat_id = ctx.chat.id;
 
-    // Obtener la lista de usuarios del chat desde Firestore
-    const doc = await firestore_db.collection('chats').doc(chat_id.toString()).get();
-    const users_list = doc.data().users;
+    // Get users from dual adapter
+    const users_list = await dualAdapter.getChatUsers(chat_id);
 
     let mentions = '';
     for (const user_id in users_list) {
@@ -352,15 +349,13 @@ bot.command("stats", async (ctx) => {
     const effective_user_id = ctx.from.id;
     const effective_chat_id = ctx.chat.id;
 
-    // Total de mensajes enviados
-    const message_data = await firestore_db.collection('loggerMessage').where('group', '==', effective_chat_id).where('user', '==', effective_user_id).get();
-
-    // Total de comandos ejecutados
-    const command_data = await firestore_db.collection('logger').where('group', '==', effective_chat_id).where('user', '==', effective_user_id).get();
+    // Get stats from dual adapter
+    const messageCount = await dualAdapter.getUserMessageCount(effective_user_id, effective_chat_id);
+    const commandCount = await dualAdapter.getUserCommandCount(effective_user_id, effective_chat_id);
 
     const mention = '[' + ctx.from.first_name + '](tg://user?id=' + effective_user_id + ')';
 
-    const message = mention + '\n' +'Numero de mensajes enviados: ' + message_data.size + '\n' + 'Numero de comandos ejecutados: ' + command_data.size;
+    const message = mention + '\n' +'Numero de mensajes enviados: ' + messageCount + '\n' + 'Numero de comandos ejecutados: ' + commandCount;
 
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
@@ -449,52 +444,6 @@ async function getCatUrl() {
     }
 
     return url
-}
-
-// Si el grupo y el user son iguales, es porque se estan enviando desde una conversacion directa con el bot
-
-// función LOGGER
-async function command_logger(user, group, command) {
-    console.log('COMMAND LOGGER');
-    await firestore_db.collection('logger').add({
-        command: command,
-        user: user,
-        group: group,
-        date: Date.now(),
-    });
-}
-
-async function message_logger(user, group, text) {
-    console.log('LOGGER MESSAGE');
-    await firestore_db.collection('loggerMessage').add({
-        text: text,
-        user: user,
-        group: group,
-        date: Date.now()
-    });
-}
-
-
-// TODO: Que leches hago con esto
-async function register_user(chat_name, chat_id, user_name, user_id) {
-    console.log('REGISTER USER');
-    const doc = await firestore_db.collection('chats').doc(chat_id.toString()).get();
-    if (doc.exists) {
-        // Si el documento existe comprobar que el usuario está en la lista de usuario
-        const users = doc.data().users;
-        if (users[user_id]) {
-            console.log('el user ya está metido');
-        } else {
-            // si el usuario no existe, añadirlo a la lista
-            users[user_id] = user_name;
-            await firestore_db.collection('chats').doc(chat_id.toString()).update({ users: users });
-        }
-    } else {
-        // El grupo no existe, crearlo y añadir al usuario a la lista
-        const data = { name: chat_name, users: { [user_id]: user_name } };
-        await firestore_db.collection('chats').doc(chat_id.toString()).set(data);
-        console.log('grupo creado');
-    }
 }
 
 
