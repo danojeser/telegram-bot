@@ -4,14 +4,17 @@ import {load} from 'cheerio';
 import * as fs from "fs";
 import ffmpeg from "ffmpeg";
 import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageRequestResponseFormatEnum } from "openai";
-import { Bot} from "grammy";
+import { Bot, InputFile } from "grammy";
 import { hydrateFiles } from "@grammyjs/files";
 import { exec } from 'child_process';
 import dualAdapter from './db/dualAdapter.js';
+import { createCanvas } from 'canvas';
+import * as os from 'os';
+import * as path from 'path';
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN;
+const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
@@ -56,6 +59,8 @@ const listaComandos = [
     { command: "stats", description: "Tus stats en este chat"},
     { command: "aitana", description: "Imagen y quote de Aitana"},
     { command: "imagen", description: "Imagen generada por IA"},
+    { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
+    { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
 ];
 
 await bot.api.setMyCommands(listaComandos.sort(compareByName));
@@ -419,6 +424,70 @@ bot.command("server", async (ctx) => {
     }
 });
 
+// COMANDO MESSAGESTATS
+bot.command("messagestats", async (ctx) => {
+    console.log('Ejecutando messagestats');
+    
+    try {
+        // Get chat ID and user ID
+        const chatId = ctx.chat.id;
+        const userId = ctx.from.id;
+        
+        // Get message counts by month
+        const stats = await dualAdapter.getMessageCountsByMonth(chatId, userId, 12);
+        
+        if (stats.length === 0) {
+            return await ctx.reply("No hay suficientes datos para generar la gráfica");
+        }
+        
+        // Generate bar graph image
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes");
+        
+        // Send the image
+        await ctx.replyWithPhoto(new InputFile(imagePath));
+        
+        // Delete the temporary file
+        fs.unlink(imagePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+    } catch (error) {
+        console.error('Error generating message stats:', error);
+        await ctx.reply('Hubo un error al generar la gráfica de estadísticas');
+    }
+});
+
+// COMANDO COMMANDSTATS
+bot.command("commandstats", async (ctx) => {
+    console.log('Ejecutando commandstats');
+    
+    try {
+        // Get chat ID and user ID
+        const chatId = ctx.chat.id;
+        const userId = ctx.from.id;
+        
+        // Get command counts by month
+        const stats = await dualAdapter.getCommandCountsByMonth(chatId, userId, 12);
+        
+        if (stats.length === 0) {
+            return await ctx.reply("No hay suficientes datos para generar la gráfica");
+        }
+        
+        // Generate bar graph image
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Comandos");
+        
+        // Send the image
+        await ctx.replyWithPhoto(new InputFile(imagePath));
+        
+        // Delete the temporary file
+        fs.unlink(imagePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+    } catch (error) {
+        console.error('Error generating command stats:', error);
+        await ctx.reply('Hubo un error al generar la gráfica de estadísticas');
+    }
+});
+
 bot.start();
 
 
@@ -464,4 +533,128 @@ async function downloadAudio (url, outputFilePath) {
     } catch (e) {
         console.log(`Hubo un error al convertir el archivo: ${e.message}`);
     }
+}
+
+// Function to generate a message stats bar graph
+async function generateMessageStatsGraph(stats, chatTitle, type) {
+    // Canvas dimensions
+    const width = 800;
+    const height = 500;
+    
+    // Create canvas
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    
+    // Fill background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Chart settings
+    const padding = 60;
+    const chartWidth = width - (padding * 2);
+    const chartHeight = height - (padding * 2);
+    
+    // Draw title
+    ctx.font = 'bold 24px Arial';
+    ctx.fillStyle = '#333333';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${type} por mes en ${chatTitle}`, width / 2, padding / 2);
+    
+    // Get max value for scaling
+    const maxCount = Math.max(...stats.map(s => s.count));
+    const maxValue = maxCount > 0 ? maxCount : 10; // Avoid division by zero
+    
+    // Format months for display
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    
+    // Calculate bar width
+    const barWidth = chartWidth / stats.length * 0.7;
+    const barSpacing = chartWidth / stats.length - barWidth;
+    
+    // Draw y-axis
+    ctx.beginPath();
+    ctx.moveTo(padding, padding);
+    ctx.lineTo(padding, height - padding);
+    ctx.strokeStyle = '#333333';
+    ctx.stroke();
+    
+    // Draw x-axis
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+    
+    // Draw y-axis labels
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'right';
+    
+    const yLabelCount = 5;
+    for (let i = 0; i <= yLabelCount; i++) {
+        const value = Math.round((maxValue / yLabelCount) * i);
+        const y = height - padding - (i * (chartHeight / yLabelCount));
+        
+        // Draw grid line
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(width - padding, y);
+        ctx.strokeStyle = '#dddddd';
+        ctx.stroke();
+        
+        // Draw label
+        ctx.fillStyle = '#333333';
+        ctx.fillText(value.toString(), padding - 10, y + 5);
+    }
+    
+    // Draw bars
+    stats.forEach((stat, index) => {
+        // Calculate bar position and height
+        const x = padding + (index * (barWidth + barSpacing)) + barSpacing / 2;
+        const barHeight = (stat.count / maxValue) * chartHeight;
+        const y = height - padding - barHeight;
+        
+        // Draw bar
+        ctx.fillStyle = 'rgba(54, 162, 235, 0.8)';
+        ctx.fillRect(x, y, barWidth, barHeight);
+        
+        // Draw bar border
+        ctx.strokeStyle = 'rgba(54, 162, 235, 1)';
+        ctx.strokeRect(x, y, barWidth, barHeight);
+        
+        // Draw x-axis label (month)
+        ctx.fillStyle = '#333333';
+        ctx.textAlign = 'center';
+        ctx.font = '14px Arial';
+        
+        // Format the month name
+        const [year, month] = stat.month.split('-');
+        const monthName = months[parseInt(month) - 1];
+        const shortMonth = monthName.substring(0, 3);
+        
+        // Draw month label
+        ctx.fillText(`${shortMonth}`, x + barWidth / 2, height - padding + 20);
+        
+        // Draw year if it's January or the first month in the graph
+        if (month === '01' || index === 0) {
+            ctx.fillText(`${year}`, x + barWidth / 2, height - padding + 40);
+        }
+        
+        // Draw count on top of bar
+        if (stat.count > 0) {
+            ctx.fillText(stat.count.toString(), x + barWidth / 2, y - 10);
+        }
+    });
+    
+    // Save image to temporary file
+    const imagePath = path.join('temp', `messagestats_${Date.now()}.png`);
+    
+    // Create a write stream to save the canvas as PNG
+    const out = fs.createWriteStream(imagePath);
+    const stream = canvas.createPNGStream();
+    stream.pipe(out);
+    
+    return new Promise((resolve, reject) => {
+        out.on('finish', () => resolve(imagePath));
+        out.on('error', reject);
+    });
 }

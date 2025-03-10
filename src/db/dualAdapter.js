@@ -130,8 +130,23 @@ class DualAdapter {
     async getChatCreationDate(chatId) {
         return await this.sqlite.getChatCreationDate(chatId);
     }
-}
 
+    // Get message count by month for a specific chat
+    async getMessageCountsByMonth(chatId, userId, monthsLimit = 12) {
+        console.log('DUAL GET MESSAGE COUNTS BY MONTH');
+        
+        // Query data from SQLite since it has better date/time functions for this task
+        return await this.sqlite.getMessageCountsByMonth(chatId, userId, monthsLimit);
+    }
+
+    // Get command count by month for a specific chat
+    async getCommandCountsByMonth(chatId, userId, monthsLimit = 12) {
+        console.log('DUAL GET COMMAND COUNTS BY MONTH');
+        
+        // Query data from SQLite since it has better date/time functions for this task
+        return await this.sqlite.getCommandCountsByMonth(chatId, userId, monthsLimit);
+    }
+}
 // Create a singleton instance
 const dualAdapter = new DualAdapter();
 export default dualAdapter; 

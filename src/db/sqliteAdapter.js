@@ -184,6 +184,90 @@ class SQLiteAdapter {
         
         return result ? result.created_at : null;
     }
+
+    // Get message counts by month for a specific chat
+    async getMessageCountsByMonth(chatId, userId, monthsLimit = 12) {
+        const db = await this.connect();
+        
+        // Calculate the timestamp for 'monthsLimit' months ago
+        const limitDate = new Date();
+        limitDate.setMonth(limitDate.getMonth() - monthsLimit);
+        const limitTimestamp = limitDate.getTime();
+        
+        // Get message logs from database
+        const logs = await db.all(
+            'SELECT date FROM message_logs WHERE group_id = ? AND user_id = ? AND date >= ?',
+            [chatId, userId, limitTimestamp]
+        );
+        
+        // Process logs to group by month
+        const monthCounts = {};
+        
+        // Initialize the past 'monthsLimit' months with zero counts
+        for (let i = 0; i < monthsLimit; i++) {
+            const month = new Date();
+            month.setMonth(month.getMonth() - i);
+            const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+            monthCounts[monthKey] = 0;
+        }
+        
+        // Count messages by month
+        for (const log of logs) {
+            const date = new Date(log.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (monthCounts[monthKey] !== undefined) {
+                monthCounts[monthKey]++;
+            }
+        }
+        
+        // Convert to array of objects sorted by month
+        return Object.entries(monthCounts)
+            .map(([month, count]) => ({ month, count }))
+            .sort((a, b) => a.month.localeCompare(b.month));
+    }
+
+    // Get command counts by month for a specific chat
+    async getCommandCountsByMonth(chatId, userId, monthsLimit = 12) {
+        const db = await this.connect();
+        
+        // Calculate the timestamp for 'monthsLimit' months ago
+        const limitDate = new Date();
+        limitDate.setMonth(limitDate.getMonth() - monthsLimit);
+        const limitTimestamp = limitDate.getTime();
+        
+        // Get command logs from database
+        const logs = await db.all(
+            'SELECT date FROM command_logs WHERE group_id = ? AND user_id = ? AND date >= ?',
+            [chatId, userId, limitTimestamp]
+        );
+        
+        // Process logs to group by month
+        const monthCounts = {};
+        
+        // Initialize the past 'monthsLimit' months with zero counts
+        for (let i = 0; i < monthsLimit; i++) {
+            const month = new Date();
+            month.setMonth(month.getMonth() - i);
+            const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+            monthCounts[monthKey] = 0;
+        }
+        
+        // Count commands by month
+        for (const log of logs) {
+            const date = new Date(log.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (monthCounts[monthKey] !== undefined) {
+                monthCounts[monthKey]++;
+            }
+        }
+        
+        // Convert to array of objects sorted by month
+        return Object.entries(monthCounts)
+            .map(([month, count]) => ({ month, count }))
+            .sort((a, b) => a.month.localeCompare(b.month));
+    }
 }
 
 // Create a singleton instance
