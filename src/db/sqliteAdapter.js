@@ -27,23 +27,23 @@ class SQLiteAdapter {
     }
 
     // Logger functions
-    async commandLogger(user, group, command) {
+    async commandLogger(user, chat, command) {
         const db = await this.connect();
         console.log('COMMAND LOGGER');
         
         await db.run(
-            'INSERT INTO command_logs (command, user_id, group_id, date) VALUES (?, ?, ?, ?)',
-            [command, user, group, Date.now()]
+            'INSERT INTO command_logs (command, user_id, chat_id, date) VALUES (?, ?, ?, ?)',
+            [command, user, chat, Date.now()]
         );
     }
 
-    async messageLogger(user, group, text) {
+    async messageLogger(user, chat, text) {
         const db = await this.connect();
         console.log('LOGGER MESSAGE');
         
         await db.run(
-            'INSERT INTO message_logs (text, user_id, group_id, date) VALUES (?, ?, ?, ?)',
-            [text, user, group, Date.now()]
+            'INSERT INTO message_logs (text, user_id, chat_id, date) VALUES (?, ?, ?, ?)',
+            [text, user, chat, Date.now()]
         );
     }
 
@@ -143,7 +143,7 @@ class SQLiteAdapter {
         const db = await this.connect();
         
         const result = await db.get(
-            'SELECT COUNT(*) as count FROM message_logs WHERE user_id = ? AND group_id = ?',
+            'SELECT COUNT(*) as count FROM message_logs WHERE user_id = ? AND chat_id = ?',
             [userId, chatId]
         );
         
@@ -154,7 +154,7 @@ class SQLiteAdapter {
         const db = await this.connect();
         
         const result = await db.get(
-            'SELECT COUNT(*) as count FROM command_logs WHERE user_id = ? AND group_id = ?',
+            'SELECT COUNT(*) as count FROM command_logs WHERE user_id = ? AND chat_id = ?',
             [userId, chatId]
         );
         
@@ -196,7 +196,7 @@ class SQLiteAdapter {
         
         // Get message logs from database
         const logs = await db.all(
-            'SELECT date FROM message_logs WHERE group_id = ? AND user_id = ? AND date >= ?',
+            'SELECT date FROM message_logs WHERE chat_id = ? AND user_id = ? AND date >= ?',
             [chatId, userId, limitTimestamp]
         );
         
@@ -238,7 +238,7 @@ class SQLiteAdapter {
         
         // Get command logs from database
         const logs = await db.all(
-            'SELECT date FROM command_logs WHERE group_id = ? AND user_id = ? AND date >= ?',
+            'SELECT date FROM command_logs WHERE chat_id = ? AND user_id = ? AND date >= ?',
             [chatId, userId, limitTimestamp]
         );
         
@@ -270,7 +270,7 @@ class SQLiteAdapter {
     }
 
     // Get command counts by month for a specific year
-    async getCommandCountsByYear(chatId, userId, year) {
+    async getMessageCountsByYear(chatId, userId, year) {
         const db = await this.connect();
         
         // Calculate timestamps for the start and end of the specified year
@@ -281,8 +281,8 @@ class SQLiteAdapter {
         
         // Get ALL command logs from database for this user and chat (no date filtering)
         const logs = await db.all(
-            'SELECT date FROM message_logs WHERE group_id = ? AND user_id = ?',
-            [chatId, userId]
+            'SELECT date FROM message_logs WHERE chat_id = ? AND user_id = ?',
+            ['-1001626672973', userId]
         );
         
         // Initialize month counts for all months in the year

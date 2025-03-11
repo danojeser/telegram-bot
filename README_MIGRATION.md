@@ -85,14 +85,14 @@ The SQLite database uses the following schema:
 - `id` (INTEGER): Auto-incremented primary key
 - `command` (TEXT): The command executed
 - `user_id` (TEXT): The user who executed the command
-- `group_id` (TEXT): The group where the command was executed
+- `chat_id` (TEXT): The chat where the command was executed
 - `date` (INTEGER): Timestamp when the command was executed
 
 #### message_logs
 - `id` (INTEGER): Auto-incremented primary key
 - `text` (TEXT): The message content
 - `user_id` (TEXT): The user who sent the message
-- `group_id` (TEXT): The group where the message was sent
+- `chat_id` (TEXT): The chat where the message was sent
 - `date` (INTEGER): Timestamp when the message was sent
 
 ## Database Schema Explanation

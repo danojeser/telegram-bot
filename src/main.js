@@ -61,7 +61,7 @@ const listaComandos = [
     { command: "imagen", description: "Imagen generada por IA"},
     { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
     { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
-    { command: "yearstats", description: "Gráfica de comandos por mes de un año específico"},
+    // TODO: { command: "yearstats", description: "Gráfica de comandos por mes de un año específico"},
 ];
 
 await bot.api.setMyCommands(listaComandos.sort(compareByName));
@@ -435,14 +435,14 @@ bot.command("messagestats", async (ctx) => {
         const userId = ctx.from.id;
         
         // Get message counts by month
-        const stats = await dualAdapter.getMessageCountsByMonth(chatId, userId, 12);
+        const stats = await dualAdapter.getMessageCountsByMonth('-1001626672973', userId, 12);
         
         if (stats.length === 0) {
             return await ctx.reply("No hay suficientes datos para generar la gráfica");
         }
         
         // Generate bar graph image
-        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes");
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes", ctx.from.first_name);
         
         // Send the image
         await ctx.replyWithPhoto(new InputFile(imagePath));
@@ -474,7 +474,7 @@ bot.command("commandstats", async (ctx) => {
         }
         
         // Generate bar graph image
-        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Comandos");
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Comandos", ctx.from.first_name);
         
         // Send the image
         await ctx.replyWithPhoto(new InputFile(imagePath));
@@ -490,8 +490,10 @@ bot.command("commandstats", async (ctx) => {
 });
 
 // COMANDO YEARSTATS
+// TODO: Rework this command. Por el momento esta deshabilitado
 bot.command("yearstats", async (ctx) => {
     console.log('Ejecutando yearstats');
+    return await ctx.reply("De momento no funciona");
     
     try {
         // Get chat ID and user ID
@@ -513,19 +515,19 @@ bot.command("yearstats", async (ctx) => {
         
         // Validate the year
         const currentYear = new Date().getFullYear();
-        if (isNaN(yearNum) || yearNum < 1969 || yearNum > currentYear) {
-            return await ctx.reply(`Por favor, especifica un año válido entre 1969 y ${currentYear}`);
+        if (isNaN(yearNum) || yearNum < 2024 || yearNum > currentYear) {
+            return await ctx.reply(`Por favor, especifica un año válido entre 2024 y ${currentYear}`);
         }
         
         // Get command counts by month for the specified year
-        const stats = await dualAdapter.getCommandCountsByYear(chatId, userId, year);
+        const stats = await dualAdapter.getMessageCountsByYear(chatId, userId, year);
         
         if (stats.every(item => item.count === 0)) {
-            return await ctx.reply(`No hay datos de comandos para el año ${year}`);
+            return await ctx.reply(`No hay datos de mensajes para el año ${year}`);
         }
         
         // Generate bar graph image
-        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "Este chat", "comandos");
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes", ctx.from.first_name);
         
         // Send the image using a file read stream
         await ctx.replyWithPhoto(new InputFile(imagePath));
@@ -588,7 +590,7 @@ async function downloadAudio (url, outputFilePath) {
 }
 
 // Function to generate a message stats bar graph
-async function generateMessageStatsGraph(stats, chatTitle, type) {
+async function generateMessageStatsGraph(stats, chatTitle, type, userName) {
     // Canvas dimensions
     const width = 800;
     const height = 500;
@@ -610,7 +612,7 @@ async function generateMessageStatsGraph(stats, chatTitle, type) {
     ctx.font = 'bold 24px Arial';
     ctx.fillStyle = '#333333';
     ctx.textAlign = 'center';
-    ctx.fillText(`${type} por mes en ${chatTitle}`, width / 2, padding / 2);
+    ctx.fillText(`${type} por mes en ${chatTitle} de ${userName}`, width / 2, padding / 2);
     
     // Get max value for scaling
     const maxCount = Math.max(...stats.map(s => s.count));

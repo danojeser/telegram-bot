@@ -20,34 +20,34 @@ class DualAdapter {
     }
 
     // Logger functions
-    async commandLogger(user, group, command) {
+    async commandLogger(user, chat, command) {
         console.log('DUAL COMMAND LOGGER');
 
         // Log to Firestore
         await this.firestore_db.collection('logger').add({
             command: command,
             user: user,
-            group: group,
+            group: chat,
             date: Date.now(),
         });
 
         // Log to SQLite
-        await this.sqlite.commandLogger(user, group, command);
+        await this.sqlite.commandLogger(user, chat, command);
     }
 
-    async messageLogger(user, group, text) {
+    async messageLogger(user, chat, text) {
         console.log('DUAL LOGGER MESSAGE');
 
         // Log to Firestore
         await this.firestore_db.collection('loggerMessage').add({
             text: text,
             user: user,
-            group: group,
+            group: chat,
             date: Date.now()
         });
 
         // Log to SQLite
-        await this.sqlite.messageLogger(user, group, text);
+        await this.sqlite.messageLogger(user, chat, text);
     }
 
     // User registration
@@ -148,11 +148,11 @@ class DualAdapter {
     }
 
     // Get command count by month for a specific year
-    async getCommandCountsByYear(chatId, userId, year) {
+    async getMessageCountsByYear(chatId, userId, year) {
         console.log('DUAL GET COMMAND COUNTS BY YEAR');
         
         // Query data from SQLite for a specific year
-        return await this.sqlite.getCommandCountsByYear(chatId, userId, year);
+        return await this.sqlite.getMessageCountsByYear(chatId, userId, year);
     }
 }
 // Create a singleton instance
