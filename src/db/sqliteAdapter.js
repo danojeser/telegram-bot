@@ -282,7 +282,7 @@ class SQLiteAdapter {
         // Get ALL command logs from database for this user and chat (no date filtering)
         const logs = await db.all(
             'SELECT date FROM message_logs WHERE chat_id = ? AND user_id = ?',
-            ['-1001626672973', userId]
+            [chatId, userId]
         );
         
         // Initialize month counts for all months in the year

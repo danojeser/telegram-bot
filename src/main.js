@@ -435,7 +435,7 @@ bot.command("messagestats", async (ctx) => {
         const userId = ctx.from.id;
         
         // Get message counts by month
-        const stats = await dualAdapter.getMessageCountsByMonth('-1001626672973', userId, 12);
+        const stats = await dualAdapter.getMessageCountsByMonth(chatId, userId, 12);
         
         if (stats.length === 0) {
             return await ctx.reply("No hay suficientes datos para generar la gráfica");
