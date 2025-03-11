@@ -150,6 +150,10 @@ async function createMissingEntities(db, userId, chatId) {
     let userCreated = false;
     let chatCreated = false;
     
+    // Ensure IDs are strings
+    userId = String(userId);
+    chatId = String(chatId);
+    
     // Check if user exists, create if not
     const userExists = await db.get('SELECT 1 FROM users WHERE user_id = ?', userId);
     if (!userExists) {

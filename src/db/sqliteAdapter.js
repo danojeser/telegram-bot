@@ -33,7 +33,7 @@ class SQLiteAdapter {
         
         await db.run(
             'INSERT INTO command_logs (command, user_id, chat_id, date) VALUES (?, ?, ?, ?)',
-            [command, user, chat, Date.now()]
+            [command, String(user), String(chat), Date.now()]
         );
     }
 
@@ -43,7 +43,7 @@ class SQLiteAdapter {
         
         await db.run(
             'INSERT INTO message_logs (text, user_id, chat_id, date) VALUES (?, ?, ?, ?)',
-            [text, user, chat, Date.now()]
+            [text, String(user), String(chat), Date.now()]
         );
     }
 
@@ -144,7 +144,7 @@ class SQLiteAdapter {
         
         const result = await db.get(
             'SELECT COUNT(*) as count FROM message_logs WHERE user_id = ? AND chat_id = ?',
-            [userId, chatId]
+            [String(userId), String(chatId)]
         );
         
         return result.count;
@@ -155,7 +155,7 @@ class SQLiteAdapter {
         
         const result = await db.get(
             'SELECT COUNT(*) as count FROM command_logs WHERE user_id = ? AND chat_id = ?',
-            [userId, chatId]
+            [String(userId), String(chatId)]
         );
         
         return result.count;
@@ -197,7 +197,7 @@ class SQLiteAdapter {
         // Get message logs from database
         const logs = await db.all(
             'SELECT date FROM message_logs WHERE chat_id = ? AND user_id = ? AND date >= ?',
-            [chatId, userId, limitTimestamp]
+            [String(chatId), String(userId), limitTimestamp]
         );
         
         // Process logs to group by month
@@ -239,7 +239,7 @@ class SQLiteAdapter {
         // Get command logs from database
         const logs = await db.all(
             'SELECT date FROM command_logs WHERE chat_id = ? AND user_id = ? AND date >= ?',
-            [chatId, userId, limitTimestamp]
+            [String(chatId), String(userId), limitTimestamp]
         );
         
         // Process logs to group by month
@@ -282,7 +282,7 @@ class SQLiteAdapter {
         // Get ALL command logs from database for this user and chat (no date filtering)
         const logs = await db.all(
             'SELECT date FROM message_logs WHERE chat_id = ? AND user_id = ?',
-            [chatId, userId]
+            [String(chatId), String(userId)]
         );
         
         // Initialize month counts for all months in the year
