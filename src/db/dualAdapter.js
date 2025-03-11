@@ -154,6 +154,14 @@ class DualAdapter {
         // Query data from SQLite for a specific year
         return await this.sqlite.getMessageCountsByYear(chatId, userId, year);
     }
+
+    // Get all-time message activity by month
+    async getAllTimeMessageActivity(chatId) {
+        console.log('DUAL GET TOTAL ACTIVITY BY YEAR');
+        
+        // Query data from SQLite for a specific year
+        return await this.sqlite.getAllTimeMessageActivity(chatId);
+    }
 }
 // Create a singleton instance
 const dualAdapter = new DualAdapter();

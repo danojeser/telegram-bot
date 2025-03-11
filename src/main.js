@@ -61,8 +61,11 @@ const listaComandos = [
     { command: "imagen", description: "Imagen generada por IA"},
     { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
     { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
-    // TODO: { command: "yearstats", description: "Gráfica de comandos por mes de un año específico"},
+    { command: "totalactivity", description: "Gráfica de actividad total de mensajes desde el inicio"}
 ];
+
+
+    // TODO: { command: "yearstats", description: "Gráfica de comandos por mes de un año específico"},
 
 await bot.api.setMyCommands(listaComandos.sort(compareByName));
 
@@ -443,6 +446,37 @@ bot.command("messagestats", async (ctx) => {
         
         // Generate bar graph image
         const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes", ctx.from.first_name);
+        
+        // Send the image
+        await ctx.replyWithPhoto(new InputFile(imagePath));
+        
+        // Delete the temporary file
+        fs.unlink(imagePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+    } catch (error) {
+        console.error('Error generating message stats:', error);
+        await ctx.reply('Hubo un error al generar la gráfica de estadísticas');
+    }
+});
+
+// COMANDO TOTALACTIVITY
+bot.command("totalactivity", async (ctx) => {
+    console.log('Ejecutando messagestats');
+    
+    try {
+        // Get chat ID and user ID
+        const chatId = ctx.chat.id;
+        
+        // Get message counts by month
+        const stats = await dualAdapter.getAllTimeMessageActivity(chatId, 12);
+        
+        if (stats.length === 0) {
+            return await ctx.reply("No hay suficientes datos para generar la gráfica");
+        }
+        
+        // Generate bar graph image
+        const imagePath = await generateMessageStatsGraph(stats, ctx.chat.title || "este chat", "Mensajes", 'todos');
         
         // Send the image
         await ctx.replyWithPhoto(new InputFile(imagePath));
