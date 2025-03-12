@@ -4,3 +4,4 @@ serviceAccountKey.json
 .gradle
 node_modules
 /db
+temp

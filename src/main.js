@@ -9,8 +9,8 @@ import { hydrateFiles } from "@grammyjs/files";
 import { exec } from 'child_process';
 import dualAdapter from './db/dualAdapter.js';
 import { createCanvas } from 'canvas';
-import * as os from 'os';
 import * as path from 'path';
+import { apuesta } from './ppt-game.js';
 
 // Variables de entorno
 dotenv.config()
@@ -61,7 +61,8 @@ const listaComandos = [
     { command: "imagen", description: "Imagen generada por IA"},
     { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
     { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
-    { command: "totalactivity", description: "Gráfica de actividad total de mensajes desde el inicio"}
+    { command: "totalactivity", description: "Gráfica de actividad total de mensajes desde el inicio"},
+    { command: "apuesta", description: "Apuesta"}
 ];
 
 
@@ -575,6 +576,8 @@ bot.command("yearstats", async (ctx) => {
         await ctx.reply('Hubo un error al generar la gráfica de estadísticas por año');
     }
 });
+
+bot.use(apuesta); 
 
 bot.start();
 
