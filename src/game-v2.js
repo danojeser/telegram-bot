@@ -317,19 +317,82 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
             profiler.end("getImageData");
 
             // Convert RGBA to RGB format since FFmpeg expects RGB24 or YUV420P
-            // This avoids PNG compression/decompression overhead
+            // Using the most optimized approach possible
             profiler.start("rgbData");
-            const rgbData = new Uint8Array(WIDTH * HEIGHT * 3); // 3 bytes per pixel (RGB)
+            const rgba = imageData.data;
+            const totalPixels = WIDTH * HEIGHT;
+            const rgbData = new Uint8Array(totalPixels * 3); // 3 bytes per pixel (RGB)
             profiler.end("rgbData");
-
+            
             profiler.start("bucleRgbData");
-            // Extract RGB values from RGBA, skipping alpha channel
-            for (let i = 0, j = 0; i < imageData.data.length; i += 4, j += 3) {
-                rgbData[j] = imageData.data[i];     // R
-                rgbData[j + 1] = imageData.data[i + 1]; // G
-                rgbData[j + 2] = imageData.data[i + 2]; // B
-                // Skip alpha channel (imageData.data[i+3])
+            // Process in large chunks directly using flat indices
+            // This eliminates multiplication operations inside the inner loop
+            let rgbIndex = 0;
+            let rgbaIndex = 0;
+            
+            // Unrolled loop with direct array access for better performance
+            // Process 8 pixels per iteration for better CPU utilization
+            const UNROLL_SIZE = 8;
+            const unrolledLimit = totalPixels - (totalPixels % UNROLL_SIZE);
+            
+            for (let i = 0; i < unrolledLimit; i += UNROLL_SIZE) {
+                // Pixel 1
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 2
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 3
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 4
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 5
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 6
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 7
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+                
+                // Pixel 8
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
             }
+            
+            // Handle any remaining pixels
+            for (let i = unrolledLimit; i < totalPixels; i++) {
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbData[rgbIndex++] = rgba[rgbaIndex++];
+                rgbaIndex++; // Skip alpha
+            }
+            
             profiler.end("bucleRgbData");
             profiler.end("getRawPixelData");
 
