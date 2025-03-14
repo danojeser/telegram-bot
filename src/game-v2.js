@@ -247,15 +247,13 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         console.log(`Simulation phase completed in ${timingData.simulationPhaseMs.toFixed(2)}ms`);
 
         // PHASE 2: Set up video generation and render frames
-        const renderingStartTime = performance.now();
-        profiler.start("rendering");
 
         // Create a log file stream for FFmpeg
         const logStream = fs.createWriteStream(ffmpegLogPath, {flags: 'a'});
         logStream.write(`\n--- FFmpeg log for ${videoPath} (${new Date().toISOString()}) ---\n`);
 
         // Set up FFmpeg process to receive frames directly via stdin pipe
-        profiler.start("ffmpeg");
+        profiler.start("setupFfmpeg");
         const ffmpegProcess = spawn('ffmpeg', [
             '-y', // Overwrite output files without asking
 
@@ -288,17 +286,8 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         });
 
         // End FFmpeg setup profiling
-        profiler.end("ffmpeg");
+        profiler.end("setupFfmpeg");
 
-        // End the rendering phase (setup only) before starting video generation
-        profiler.end("rendering");
-
-        // Calculate rendering phase time (just the setup)
-        timingData.renderingPhaseMs = performance.now() - renderingStartTime;
-
-        // Start timing video generation as a separate phase
-        const videoStartTime = performance.now();
-        profiler.start("videoGeneration");
 
         // Create canvas for rendering frames
         profiler.start("canvas");
@@ -307,6 +296,8 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         profiler.end("canvas");
 
 
+        const renderingStartTime = performance.now();
+        profiler.start("rendering");
         // Render each frame from the serialized states
         for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
             // Time for rendering the frame
@@ -359,8 +350,18 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         }
 
         // Close the FFmpeg input stream to signal we're done sending frames
-        profiler.start("finishFFmpeg");
         ffmpegProcess.stdin.end();
+
+        // End the rendering phase (setup only) before starting video generation
+        profiler.end("rendering");
+        // Calculate rendering phase time (just the setup)
+        timingData.renderingPhaseMs = performance.now() - renderingStartTime;
+
+
+        // Start timing video generation as a separate phase
+        const videoStartTime = performance.now();
+        profiler.start("videoGeneration");
+
 
         // Wait for FFmpeg to finish processing
         await new Promise((resolve, reject) => {
@@ -375,7 +376,7 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
                 }
             });
         });
-        profiler.end("finishFFmpeg");
+
         profiler.end("videoGeneration");
 
         // Calculate video generation time
@@ -404,16 +405,16 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         profiler.end("resultGeneration");
 
 
+        // Calculate total time
+        const totalTimeMs = performance.now() - totalStartTime;
+        timingData.totalTimeMs = totalTimeMs;
+
         // Send the video and results image
         await ctx.replyWithVideo(new InputFile(videoPath));
         await ctx.replyWithPhoto(new InputFile(resultImagePath), {
             caption: "Resultado final de la simulación"
         });
 
-
-        // Calculate total time
-        const totalTimeMs = performance.now() - totalStartTime;
-        timingData.totalTimeMs = totalTimeMs;
 
         // Generate profiling report
         const profilingReport = profiler.generateReport(totalTimeMs);
@@ -443,16 +444,17 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         ).join('\n');
 
         // Let the user know about the timing data with detailed breakdown
-        await ctx.reply(`Simulación optimizada completada en ${(timingData.totalTimeMs / 1000).toFixed(2)} segundos.
-- Fase de simulación: ${(timingData.simulationPhaseMs / 1000).toFixed(2)}s (${timingData.stats.simulationTimePercentage}%)
-- Fase de renderizado: ${(timingData.renderingPhaseMs / 1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
-- Generación de video: ${(timingData.videoGenerationMs / 1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
-
-TOP 10 FUNCIONES POR TIEMPO DE EJECUCIÓN:
-${functionTimingSummary}
-
-Reporte completo guardado en:
-- Datos de tiempo y perfil: ${timingDataPath}`);
+        await ctx.reply(`Generación optimizada completada en ${(timingData.totalTimeMs / 1000).toFixed(2)} segundos.
+            - Fase de simulación: ${(timingData.simulationPhaseMs / 1000).toFixed(2)}s (${timingData.stats.simulationTimePercentage}%)
+            - Fase de renderizado: ${(timingData.renderingPhaseMs / 1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
+            - Generación de video: ${(timingData.videoGenerationMs / 1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
+            
+            TOP 10 FUNCIONES POR TIEMPO DE EJECUCIÓN:
+            ${functionTimingSummary}
+            
+            Reporte completo guardado en:
+            - Datos de tiempo y perfil: ${timingDataPath}`
+        );
 
         // Clean up
         fs.unlink(videoPath, (err) => {
