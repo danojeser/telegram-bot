@@ -74,18 +74,6 @@ export class Profiler {
 
         this.functionTimings[hierarchicalName] += duration;
         this.callCounts[hierarchicalName]++;
-
-        // Also track the root function (without hierarchy) for backward compatibility
-        const rootFunctionName = hierarchicalName.includes(' > ') ?
-            hierarchicalName.split(' > ').pop() : hierarchicalName;
-
-        if (!this.functionTimings[rootFunctionName]) {
-            this.functionTimings[rootFunctionName] = 0;
-            this.callCounts[rootFunctionName] = 0;
-        }
-
-        this.functionTimings[rootFunctionName] += duration;
-        this.callCounts[rootFunctionName]++;
     }
 
     // Reset all timings
