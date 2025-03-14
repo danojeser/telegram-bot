@@ -30,6 +30,8 @@ const TEAM_COLORS = {
     },
 };
 
+const RADIUS_SIZE = 21.6;
+
 // Cache for loaded images
 const imageCache = {};
 // Cache for pre-rendered entity sprites
@@ -78,10 +80,6 @@ async function preRenderEntitySprites() {
     await loadGameImages();
     profiler.end("loadGameImages");
 
-    // Define a set of common entity sizes that will be used
-    // The keys will be used as identifiers like "rock_21.6" for a rock with radius 21.6
-    // TODO: Modificar para solo usar el 21.6
-    const radius = 21.6; // 21.6 is the typical size (0.03 * 720)
 
     // Pre-render sprites for each entity type and size
     for (const type of [TEAM_TYPES.ROCK, TEAM_TYPES.PAPER, TEAM_TYPES.SCISSORS]) {
@@ -92,10 +90,11 @@ async function preRenderEntitySprites() {
 
 
         // Create an identifier for this sprite
-        const spriteKey = `${type}_${radius}`;
+        // The keys will be used as identifiers like "rock_21.6" for a rock with radius 21.6
+        const spriteKey = `${type}_${RADIUS_SIZE}`;
 
         // Create a small canvas just for this sprite
-        const spriteCanvas = createCanvas(radius * 4, radius * 4); // Make canvas big enough
+        const spriteCanvas = createCanvas(RADIUS_SIZE * 4, RADIUS_SIZE * 4); // Make canvas big enough
         const spriteCtx = spriteCanvas.getContext('2d');
 
         // Clear the canvas
@@ -106,7 +105,7 @@ async function preRenderEntitySprites() {
         const centerY = spriteCanvas.height / 2;
 
         spriteCtx.beginPath();
-        spriteCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        spriteCtx.arc(centerX, centerY, RADIUS_SIZE, 0, Math.PI * 2);
         spriteCtx.fillStyle = colors.fill;
         spriteCtx.fill();
         spriteCtx.lineWidth = 2;
@@ -114,7 +113,7 @@ async function preRenderEntitySprites() {
         spriteCtx.stroke();
 
         // Draw the image on top
-        const imgSize = radius * 1.8; // Same sizing as in drawEntity
+        const imgSize = RADIUS_SIZE * 1.8; // Same sizing as in drawEntity
         spriteCtx.drawImage(img, centerX - imgSize / 2, centerY - imgSize / 2, imgSize, imgSize);
 
         // Store the pre-rendered sprite
@@ -124,16 +123,16 @@ async function preRenderEntitySprites() {
 
     // Also pre-render capture effect sprites
     for (let effectStrength = 0.2; effectStrength <= 1.0; effectStrength += 0.2) {
-        const effectKey = `capture_${radius}_${effectStrength.toFixed(1)}`;
+        const effectKey = `capture_${RADIUS_SIZE}_${effectStrength.toFixed(1)}`;
 
-        const effectCanvas = createCanvas(radius * 6, radius * 6);
+        const effectCanvas = createCanvas(RADIUS_SIZE * 6, RADIUS_SIZE * 6);
         const effectCtx = effectCanvas.getContext('2d');
 
         const centerX = effectCanvas.width / 2;
         const centerY = effectCanvas.height / 2;
 
         effectCtx.beginPath();
-        effectCtx.arc(centerX, centerY, radius * (1 + effectStrength * 0.5), 0, Math.PI * 2);
+        effectCtx.arc(centerX, centerY, RADIUS_SIZE * (1 + effectStrength * 0.5), 0, Math.PI * 2);
         effectCtx.strokeStyle = `rgba(255, 255, 255, ${effectStrength})`;
         effectCtx.lineWidth = 3;
         effectCtx.stroke();
@@ -637,27 +636,15 @@ function renderFrame(context, width, height, fps, serializedState) {
 
 // Modify the drawEntity function to use pre-rendered sprites
 function drawEntity(ctx, entityData) {
-    // Find the closest pre-rendered sprite size
-    const radius = entityData.radius;
     const type = entityData.type;
 
-    // Get closest pre-rendered radius
-    const preRenderedRadii = [10, 15, 20, 21.6, 25, 30];
-    let closestRadius = preRenderedRadii[0];
-
-    // Find the closest radius in our pre-rendered sprites
-    for (const r of preRenderedRadii) {
-        if (Math.abs(r - radius) < Math.abs(closestRadius - radius)) {
-            closestRadius = r;
-        }
-    }
-
     // Round coordinates to integers for better performance
+    // TODO: Review si es buena idea esto o es no needed
     const x = Math.floor(entityData.x);
     const y = Math.floor(entityData.y);
 
     // Sprite key based on type and radius
-    const spriteKey = `${type}_${closestRadius}`;
+    const spriteKey = `${type}_${RADIUS_SIZE}`;
 
     // Draw the pre-rendered sprite if available
     if (spriteCache[spriteKey]) {
@@ -677,14 +664,14 @@ function drawEntity(ctx, entityData) {
 
         // Draw circle background
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.arc(x, y, RADIUS_SIZE, 0, Math.PI * 2);
         ctx.fillStyle = colors.fill;
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = colors.stroke;
         ctx.stroke();
         // Fallback if image not loaded
-        ctx.font = `${radius * 1.2}px Arial`;
+        ctx.font = `${RADIUS_SIZE * 1.2}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = colors.stroke;
@@ -703,8 +690,8 @@ function drawEntity(ctx, entityData) {
 
         // Get closest effect strength (rounded to 0.1)
         const effectStrength = Math.round(entityData.captureEffect * 10) / 10;
-        // Find closest pre-rendered effect
-        const effectKey = `capture_${closestRadius}_${effectStrength.toFixed(1)}`;
+        // Find pre-rendered effect
+        const effectKey = `capture_${RADIUS_SIZE}_${effectStrength.toFixed(1)}`;
 
         if (spriteCache[effectKey]) {
             // Use pre-rendered effect
@@ -717,7 +704,7 @@ function drawEntity(ctx, entityData) {
         } else {
             // Fallback to drawing the effect directly
             ctx.beginPath();
-            ctx.arc(x, y, radius * (1 + entityData.captureEffect * 0.5), 0, Math.PI * 2);
+            ctx.arc(x, y, RADIUS_SIZE * (1 + entityData.captureEffect * 0.5), 0, Math.PI * 2);
             ctx.strokeStyle = `rgba(255, 255, 255, ${entityData.captureEffect})`;
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -850,7 +837,7 @@ class Entity {
         this.type = type;
         this.x = x;
         this.y = y;
-        this.radius = stateWidth * 0.03; // Responsive size
+        this.radius = stateWidth * 0.03; // Responsive size = 21.6
         this.vx = (Math.random() * 2 - 1) * (stateWidth * 0.15);
         this.vy = (Math.random() * 2 - 1) * (stateWidth * 0.15);
         this.captureEffect = 0;
