@@ -30,6 +30,8 @@ const TEAM_COLORS = {
 
 // Cache for loaded images
 const imageCache = {};
+// Cache for pre-rendered entity sprites
+const spriteCache = {};
 
 // Add profiler utility after imports
 /**
@@ -169,12 +171,88 @@ async function loadGameImages() {
     for (const [type, imagePath] of Object.entries(imagePaths)) {
       imageCache[type] = await loadImage(imagePath);
     }
+    
+    // Pre-render entity sprites at various sizes for common radius values
+    await preRenderEntitySprites();
 
     return true;
   } catch (error) {
     console.error("Error loading game images:", error);
     return false;
   }
+}
+
+// Add a new function to pre-render entity sprites
+async function preRenderEntitySprites() {
+  profiler.start("preRenderEntitySprites");
+  console.log("Pre-rendering entity sprites...");
+  
+  // Define a set of common entity sizes that will be used
+  // The keys will be used as identifiers like "rock_21.6" for a rock with radius 21.6
+  const radiusSizes = [10, 15, 20, 21.6, 25, 30]; // 21.6 is the typical size (0.03 * 720)
+  
+  // Pre-render sprites for each entity type and size
+  for (const type of [TEAM_TYPES.ROCK, TEAM_TYPES.PAPER, TEAM_TYPES.SCISSORS]) {
+    const colors = TEAM_COLORS[type];
+    const img = imageCache[type];
+    
+    if (!img) continue; // Skip if image not loaded
+    
+    for (const radius of radiusSizes) {
+      // Create an identifier for this sprite
+      const spriteKey = `${type}_${radius}`;
+      
+      // Create a small canvas just for this sprite
+      const spriteCanvas = createCanvas(radius * 4, radius * 4); // Make canvas big enough
+      const spriteCtx = spriteCanvas.getContext('2d');
+      
+      // Clear the canvas
+      spriteCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+      
+      // Draw the circle background
+      const centerX = spriteCanvas.width / 2;
+      const centerY = spriteCanvas.height / 2;
+      
+      spriteCtx.beginPath();
+      spriteCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      spriteCtx.fillStyle = colors.fill;
+      spriteCtx.fill();
+      spriteCtx.lineWidth = 2;
+      spriteCtx.strokeStyle = colors.stroke;
+      spriteCtx.stroke();
+      
+      // Draw the image on top
+      const imgSize = radius * 1.8; // Same sizing as in drawEntity
+      spriteCtx.drawImage(img, centerX - imgSize/2, centerY - imgSize/2, imgSize, imgSize);
+      
+      // Store the pre-rendered sprite
+      spriteCache[spriteKey] = spriteCanvas;
+    }
+  }
+  
+  // Also pre-render capture effect sprites
+  for (const radius of radiusSizes) {
+    for (let effectStrength = 0.2; effectStrength <= 1.0; effectStrength += 0.2) {
+      const effectKey = `capture_${radius}_${effectStrength.toFixed(1)}`;
+      
+      const effectCanvas = createCanvas(radius * 6, radius * 6);
+      const effectCtx = effectCanvas.getContext('2d');
+      
+      const centerX = effectCanvas.width / 2;
+      const centerY = effectCanvas.height / 2;
+      
+      effectCtx.beginPath();
+      effectCtx.arc(centerX, centerY, radius * (1 + effectStrength * 0.5), 0, Math.PI * 2);
+      effectCtx.strokeStyle = `rgba(255, 255, 255, ${effectStrength})`;
+      effectCtx.lineWidth = 3;
+      effectCtx.stroke();
+      
+      spriteCache[effectKey] = effectCanvas;
+    }
+  }
+  
+  console.log(`Pre-rendered ${Object.keys(spriteCache).length} sprites`);
+  profiler.end("preRenderEntitySprites");
 }
 
 /**
@@ -661,55 +739,106 @@ function renderFrame(context, width, height, fps, serializedState) {
   }
 }
 
-/**
- * Draw an entity from serialized data
- */
+// Modify the drawEntity function to use pre-rendered sprites
 function drawEntity(ctx, entityData) {
-  profiler.start("drawEntity:background");
-  const colors = TEAM_COLORS[entityData.type];
+  // Find the closest pre-rendered sprite size
+  const radius = entityData.radius;
+  const type = entityData.type;
   
-  // Draw circle background
-  ctx.beginPath();
-  ctx.arc(entityData.x, entityData.y, entityData.radius, 0, Math.PI * 2);
-  ctx.fillStyle = colors.fill;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = colors.stroke;
-  ctx.stroke();
-  profiler.end("drawEntity:background");
+  // Get closest pre-rendered radius
+  const preRenderedRadii = [10, 15, 20, 21.6, 25, 30];
+  let closestRadius = preRenderedRadii[0];
   
-  profiler.start("drawEntity:image");
-  // Draw image instead of text
-  if (imageCache[entityData.type]) {
-    const img = imageCache[entityData.type];
-    const imgSize = entityData.radius * 1.8; // Slightly larger than radius
-    ctx.drawImage(img, entityData.x - imgSize/2, entityData.y - imgSize/2, imgSize, imgSize);
-  } else {
-    // Fallback if image not loaded
-    ctx.font = `${entityData.radius * 1.2}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = colors.stroke;
-    
-    let text = '';
-    if (entityData.type === TEAM_TYPES.ROCK) text = 'R';
-    else if (entityData.type === TEAM_TYPES.PAPER) text = 'P';
-    else text = 'S';
-    
-    ctx.fillText(text, entityData.x, entityData.y);
+  // Find the closest radius in our pre-rendered sprites
+  for (const r of preRenderedRadii) {
+    if (Math.abs(r - radius) < Math.abs(closestRadius - radius)) {
+      closestRadius = r;
+    }
   }
-  profiler.end("drawEntity:image");
   
-  profiler.start("drawEntity:captureEffect");
+  // Round coordinates to integers for better performance
+  const x = Math.floor(entityData.x);
+  const y = Math.floor(entityData.y);
+  
+  // Sprite key based on type and radius
+  const spriteKey = `${type}_${closestRadius}`;
+  
+  // Draw the pre-rendered sprite if available
+  if (spriteCache[spriteKey]) {
+    profiler.start("drawEntity:drawPreRendered");
+    const sprite = spriteCache[spriteKey];
+    // Draw centered on the entity position
+    ctx.drawImage(
+      sprite, 
+      x - sprite.width/2, 
+      y - sprite.height/2
+    );
+    profiler.end("drawEntity:drawPreRendered");
+  } else {
+    // Fallback to the old method in case the sprite is not in the cache
+    profiler.start("drawEntity:background");
+    const colors = TEAM_COLORS[entityData.type];
+    
+    // Draw circle background
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = colors.fill;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = colors.stroke;
+    ctx.stroke();
+    profiler.end("drawEntity:background");
+    
+    profiler.start("drawEntity:image");
+    // Draw image instead of text
+    if (imageCache[entityData.type]) {
+      const img = imageCache[entityData.type];
+      const imgSize = radius * 1.8; // Slightly larger than radius
+      ctx.drawImage(img, x - imgSize/2, y - imgSize/2, imgSize, imgSize);
+    } else {
+      // Fallback if image not loaded
+      ctx.font = `${radius * 1.2}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = colors.stroke;
+      
+      let text = '';
+      if (entityData.type === TEAM_TYPES.ROCK) text = 'R';
+      else if (entityData.type === TEAM_TYPES.PAPER) text = 'P';
+      else text = 'S';
+      
+      ctx.fillText(text, x, y);
+    }
+    profiler.end("drawEntity:image");
+  }
+  
   // Draw capture effect if active
   if (entityData.captureEffect > 0) {
-    ctx.beginPath();
-    ctx.arc(entityData.x, entityData.y, entityData.radius * (1 + entityData.captureEffect * 0.5), 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255, 255, 255, ${entityData.captureEffect})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    profiler.start("drawEntity:captureEffect");
+    
+    // Get closest effect strength (rounded to 0.1)
+    const effectStrength = Math.round(entityData.captureEffect * 10) / 10;
+    // Find closest pre-rendered effect
+    const effectKey = `capture_${closestRadius}_${effectStrength.toFixed(1)}`;
+    
+    if (spriteCache[effectKey]) {
+      // Use pre-rendered effect
+      const effectSprite = spriteCache[effectKey];
+      ctx.drawImage(
+        effectSprite,
+        x - effectSprite.width/2,
+        y - effectSprite.height/2
+      );
+    } else {
+      // Fallback to drawing the effect directly
+      ctx.beginPath();
+      ctx.arc(x, y, radius * (1 + entityData.captureEffect * 0.5), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${entityData.captureEffect})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    profiler.end("drawEntity:captureEffect");
   }
-  profiler.end("drawEntity:captureEffect");
 }
 
 /**
