@@ -31,6 +31,120 @@ const TEAM_COLORS = {
 // Cache for loaded images
 const imageCache = {};
 
+// Add profiler utility after imports
+/**
+ * Profiler utility to track execution time of functions
+ */
+class Profiler {
+  constructor() {
+    this.functionTimings = {};
+    this.callCounts = {};
+    this.startTimes = {};
+    this.enabled = true;
+  }
+
+  // Start timing a function
+  start(functionName) {
+    if (!this.enabled) return;
+    
+    if (!this.startTimes[functionName]) {
+      this.startTimes[functionName] = [];
+    }
+    this.startTimes[functionName].push(performance.now());
+  }
+
+  // End timing a function
+  end(functionName) {
+    if (!this.enabled || !this.startTimes[functionName] || this.startTimes[functionName].length === 0) return;
+    
+    const endTime = performance.now();
+    const startTime = this.startTimes[functionName].pop();
+    const duration = endTime - startTime;
+    
+    if (!this.functionTimings[functionName]) {
+      this.functionTimings[functionName] = 0;
+      this.callCounts[functionName] = 0;
+    }
+    
+    this.functionTimings[functionName] += duration;
+    this.callCounts[functionName]++;
+  }
+
+  // Reset all timings
+  reset() {
+    this.functionTimings = {};
+    this.callCounts = {};
+    this.startTimes = {};
+  }
+
+  // Generate a report of all function timings
+  generateReport(totalTime) {
+    const report = {
+      totalTimeMs: totalTime,
+      functions: {}
+    };
+
+    // Sort functions by total time (descending)
+    const sortedFunctions = Object.keys(this.functionTimings).sort(
+      (a, b) => this.functionTimings[b] - this.functionTimings[a]
+    );
+
+    for (const functionName of sortedFunctions) {
+      const timeMs = this.functionTimings[functionName];
+      const calls = this.callCounts[functionName];
+      const percentageOfTotal = (timeMs / totalTime) * 100;
+      const avgTimePerCall = timeMs / calls;
+      
+      report.functions[functionName] = {
+        totalTimeMs: timeMs,
+        callCount: calls,
+        percentageOfTotal: percentageOfTotal.toFixed(2),
+        avgTimePerCallMs: avgTimePerCall.toFixed(3)
+      };
+    }
+
+    return report;
+  }
+}
+
+// Create a global profiler instance
+const profiler = new Profiler();
+
+/**
+ * Utility function to profile a function's execution
+ * @param {Function} fn - The function to profile
+ * @param {string} name - Name to use for profiling
+ * @returns {Function} - Wrapped function that profiles execution
+ */
+function profileFunction(fn, name) {
+  return function(...args) {
+    profiler.start(name);
+    const result = fn.apply(this, args);
+    profiler.end(name);
+    return result;
+  };
+}
+
+/**
+ * Utility function to profile an async function's execution
+ * @param {Function} fn - The async function to profile
+ * @param {string} name - Name to use for profiling
+ * @returns {Function} - Wrapped async function that profiles execution
+ */
+function profileAsyncFunction(fn, name) {
+  return async function(...args) {
+    profiler.start(name);
+    try {
+      const result = await fn.apply(this, args);
+      profiler.end(name);
+      return result;
+    } catch (error) {
+      profiler.end(name);
+      throw error;
+    }
+  };
+}
+
 // Load images before using them
 async function loadGameImages() {
   try {
@@ -75,6 +189,7 @@ apuesta2.command("apuesta2", async (ctx) => {
   const videoPath = path.join("temp", `apuesta_${Date.now()}.mp4`);
   const resultImagePath = path.join("temp", `result_${Date.now()}.png`);
   const ffmpegLogPath = "ultimo-log-ffmpeg.log";
+  const profilingReportPath = path.join("temp", `profiling_report_${Date.now()}.json`);
   
   // Create temp directory if it doesn't exist
   if (!fs.existsSync('temp')) {
@@ -106,39 +221,49 @@ apuesta2.command("apuesta2", async (ctx) => {
   const SIMULATION_SPEED = 2; // Speed multiplier for game simulation
   const TEAM_ELEMENTS = 10; // Number of elements per team
   
+  // Reset profiler before starting
+  profiler.reset();
+  
   // Start timing the entire process
   const totalStartTime = performance.now();
   
   try {
     // Load game images before starting
-    await ctx.reply("Generando simulación optimizada...");
+    profiler.start("loadGameImages");
+    await ctx.reply("Generando simulación con profiling detallado...");
     const imagesLoaded = await loadGameImages();
+    profiler.end("loadGameImages");
     
     // Initialize game parameters
+    profiler.start("initializeGameState");
     const gameState = initializeGameState(WIDTH, HEIGHT, TEAM_ELEMENTS, GAME_DURATION);
     gameState.countdownFrames = COUNTDOWN_DURATION * FPS; // Total countdown frames
     gameState.countdown = gameState.countdownFrames; // Current countdown frames remaining
     gameState.initialCountdownFrames = gameState.countdownFrames; // Store initial value for time calculations
+    profiler.end("initializeGameState");
     
     // Store the total number of frames for timing data
     timingData.totalFrames = TOTAL_FRAMES;
     
     // PHASE 1: Run the entire simulation and store all frame states
     const simulationStartTime = performance.now();
+    profiler.start("simulationPhase");
     
     // Arrays to store serialized game states for each frame
     const frameStates = [];
     
     // Pre-compute all simulation states and store serialized versions
-    // Use a single game state for all simulations to preserve methods
     for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
       // Process the frame - this updates the game state
+      profiler.start("processFrameSimulation");
       processFrameSimulation(gameState, frameIndex, FPS, SIMULATION_SPEED);
+      profiler.end("processFrameSimulation");
       
       // Store a serialized copy of the current state
-      // Convert entities to plain objects and store only their data
+      profiler.start("serializeGameState");
       const serializedState = serializeGameState(gameState);
       frameStates.push(serializedState);
+      profiler.end("serializeGameState");
       
       // Log progress periodically during simulation
       if (frameIndex % 100 === 0) {
@@ -146,27 +271,37 @@ apuesta2.command("apuesta2", async (ctx) => {
       }
     }
     
+    profiler.end("simulationPhase");
     timingData.simulationPhaseMs = performance.now() - simulationStartTime;
     console.log(`Simulation phase completed in ${timingData.simulationPhaseMs.toFixed(2)}ms`);
     
     // PHASE 2: Set up video generation and render frames
     const renderingStartTime = performance.now();
+    profiler.start("renderingPhase");
     
     // Create a log file stream for FFmpeg
     const logStream = fs.createWriteStream(ffmpegLogPath, { flags: 'a' });
     logStream.write(`\n--- FFmpeg log for ${videoPath} (${new Date().toISOString()}) ---\n`);
     
     // Set up FFmpeg process to receive frames directly via stdin pipe
+    profiler.start("setupFFmpeg");
     const ffmpegProcess = spawn('ffmpeg', [
       '-y', // Overwrite output files without asking
-      '-f', 'image2pipe', // Specify that we're piping in image data
+      
+      // Raw video input settings
+      '-f', 'rawvideo',          // Input format is raw video
+      '-pixel_format', 'rgb24',  // Input pixel format (RGB, 8 bits per channel)
+      '-video_size', `${WIDTH}x${HEIGHT}`, // Input video size
       '-framerate', FPS.toString(), // Input framerate
-      '-i', '-', // Input from stdin
-      '-c:v', 'libx264', // Use H.264 codec
-      '-pix_fmt', 'yuv420p', // Standard pixel format
-      '-preset', 'fast', // Encoding preset (fast encoding)
-      '-crf', '22', // Quality level (lower is better quality, higher is smaller file)
-      videoPath // Output file
+      '-i', '-',                 // Input from stdin
+      
+      // Output codec settings (same as before)
+      '-c:v', 'libx264',         // H.264 codec
+      '-pix_fmt', 'yuv420p',     // Use yuv420p for compatibility
+      '-preset', 'veryfast',     // Fast encoding
+      '-tune', 'zerolatency',    // Optimize for low latency
+      '-crf', '22',              // Quality level
+      videoPath                  // Output file
     ]);
     
     // Pipe FFmpeg stderr to our log file
@@ -183,41 +318,65 @@ apuesta2.command("apuesta2", async (ctx) => {
     
     // Start timing video generation
     const videoStartTime = performance.now();
+    profiler.start("videoGeneration");
     
     // Create canvas for rendering frames
+    profiler.start("createCanvas");
     const canvas = createCanvas(WIDTH, HEIGHT);
     const context = canvas.getContext('2d');
+    profiler.end("createCanvas");
+    
+    // Detailed timing data for rendering breakdown
+    const renderingBreakdown = {
+      renderingTime: 0,
+      encodingTime: 0,
+      writingTime: 0
+    };
     
     // Render each frame from the serialized states
     for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
-      // Clear the canvas for this frame
+      // Time for rendering the frame
+      profiler.start("clearCanvas");
       context.clearRect(0, 0, WIDTH, HEIGHT);
+      profiler.end("clearCanvas");
       
       // Render this frame using the serialized state
+      profiler.start("renderFrame");
       renderFrame(context, WIDTH, HEIGHT, FPS, frameStates[frameIndex]);
+      profiler.end("renderFrame");
       
-      // Convert canvas to PNG buffer and pipe directly to FFmpeg
-      const pngStream = canvas.createPNGStream();
+      // Get raw pixel data from canvas instead of using PNG conversion
+      profiler.start("getRawPixelData");
+      const imageData = context.getImageData(0, 0, WIDTH, HEIGHT);
       
-      // Write frame to FFmpeg input
+      // Convert RGBA to RGB format since FFmpeg expects RGB24 or YUV420P
+      // This avoids PNG compression/decompression overhead
+      const rgbData = new Uint8Array(WIDTH * HEIGHT * 3); // 3 bytes per pixel (RGB)
+      
+      // Extract RGB values from RGBA, skipping alpha channel
+      for (let i = 0, j = 0; i < imageData.data.length; i += 4, j += 3) {
+        rgbData[j] = imageData.data[i];     // R
+        rgbData[j+1] = imageData.data[i+1]; // G
+        rgbData[j+2] = imageData.data[i+2]; // B
+        // Skip alpha channel (imageData.data[i+3])
+      }
+      profiler.end("getRawPixelData");
+      
+      // Write frame to FFmpeg directly using raw pixel format
+      profiler.start("writeToFFmpeg");
       await new Promise((resolve, reject) => {
-        pngStream.on('data', (chunk) => {
-          // Check if we can still write to the FFmpeg process
-          if (ffmpegProcess.stdin.writable) {
-            const canContinue = ffmpegProcess.stdin.write(chunk);
-            if (!canContinue) {
-              // If the buffer is full, wait for drain event before continuing
-              ffmpegProcess.stdin.once('drain', resolve);
-            } else {
-              process.nextTick(resolve);
-            }
+        if (ffmpegProcess.stdin.writable) {
+          const canContinue = ffmpegProcess.stdin.write(rgbData);
+          if (!canContinue) {
+            ffmpegProcess.stdin.once('drain', resolve);
           } else {
-            reject(new Error('FFmpeg stdin is not writable'));
+            process.nextTick(resolve);
           }
-        });
-        pngStream.on('end', resolve);
-        pngStream.on('error', reject);
+        } else {
+          reject(new Error('FFmpeg stdin is not writable'));
+        }
       });
+      profiler.end("writeToFFmpeg");
       
       // Log progress periodically
       if (frameIndex % 30 === 0) {
@@ -225,10 +384,8 @@ apuesta2.command("apuesta2", async (ctx) => {
       }
     }
     
-    // Calculate rendering phase time
-    timingData.renderingPhaseMs = performance.now() - renderingStartTime;
-    
     // Close the FFmpeg input stream to signal we're done sending frames
+    profiler.start("finishFFmpeg");
     ffmpegProcess.stdin.end();
     
     // Wait for FFmpeg to finish processing
@@ -244,11 +401,14 @@ apuesta2.command("apuesta2", async (ctx) => {
         }
       });
     });
+    profiler.end("finishFFmpeg");
+    profiler.end("videoGeneration");
     
     // Calculate video generation time
     timingData.videoGenerationMs = performance.now() - videoStartTime;
     
     // Generate results image separately (using the final game state)
+    profiler.start("generateResultImage");
     const resultCanvas = createCanvas(WIDTH, HEIGHT);
     const resultContext = resultCanvas.getContext('2d');
     drawResultsScreen(resultContext, frameStates[frameStates.length - 1], WIDTH, HEIGHT);
@@ -262,15 +422,27 @@ apuesta2.command("apuesta2", async (ctx) => {
       resultOut.on('finish', resolve);
       resultOut.on('error', reject);
     });
+    profiler.end("generateResultImage");
+    
+    profiler.end("renderingPhase");
+    
+    // Calculate rendering phase time
+    timingData.renderingPhaseMs = performance.now() - renderingStartTime;
     
     // Send the video and results image
+    profiler.start("sendResults");
     await ctx.replyWithVideo(new InputFile(videoPath));
     await ctx.replyWithPhoto(new InputFile(resultImagePath), {
       caption: "Resultado final de la simulación"
     });
+    profiler.end("sendResults");
     
     // Calculate total time
-    timingData.totalTimeMs = performance.now() - totalStartTime;
+    const totalTimeMs = performance.now() - totalStartTime;
+    timingData.totalTimeMs = totalTimeMs;
+    
+    // Generate profiling report
+    const profilingReport = profiler.generateReport(totalTimeMs);
     
     // Add some statistics
     timingData.stats = {
@@ -278,19 +450,39 @@ apuesta2.command("apuesta2", async (ctx) => {
       totalFrames: TOTAL_FRAMES,
       simulationTimePercentage: (timingData.simulationPhaseMs / timingData.totalTimeMs * 100).toFixed(2),
       renderingTimePercentage: (timingData.renderingPhaseMs / timingData.totalTimeMs * 100).toFixed(2),
-      videoGenerationTimePercentage: (timingData.videoGenerationMs / timingData.totalTimeMs * 100).toFixed(2)
+      videoGenerationTimePercentage: (timingData.videoGenerationMs / timingData.totalTimeMs * 100).toFixed(2),
+      profilingData: profilingReport
     };
     
     // Save the timing data to a file
     fs.writeFileSync(timingDataPath, JSON.stringify(timingData, null, 2));
     console.log(`Timing data saved to ${timingDataPath}`);
     
-    // Let the user know about the timing data
+    // Save the detailed profiling report to a separate file
+    fs.writeFileSync(profilingReportPath, JSON.stringify(profilingReport, null, 2));
+    console.log(`Detailed profiling report saved to ${profilingReportPath}`);
+    
+    // Prepare a summary of function timings for display
+    const topFunctions = Object.entries(profilingReport.functions)
+      .sort((a, b) => parseFloat(b[1].percentageOfTotal) - parseFloat(a[1].percentageOfTotal))
+      .slice(0, 10); // Top 10 functions
+    
+    let functionTimingSummary = topFunctions.map(([funcName, data]) => 
+      `- ${funcName}: ${(data.totalTimeMs/1000).toFixed(2)}s (${data.percentageOfTotal}%, llamadas: ${data.callCount})`
+    ).join('\n');
+    
+    // Let the user know about the timing data with detailed breakdown
     await ctx.reply(`Simulación optimizada completada en ${(timingData.totalTimeMs/1000).toFixed(2)} segundos.
 - Fase de simulación: ${(timingData.simulationPhaseMs/1000).toFixed(2)}s (${timingData.stats.simulationTimePercentage}%)
-- Fase de renderizado: ${(timingData.totalTimeMs / 1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
-- Generación de video: ${(timingData.videoGenerationMs / 1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
-Datos completos guardados en ${timingDataPath}`);
+- Fase de renderizado: ${(timingData.renderingPhaseMs/1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
+- Generación de video: ${(timingData.videoGenerationMs/1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
+
+TOP 10 FUNCIONES POR TIEMPO DE EJECUCIÓN:
+${functionTimingSummary}
+
+Reportes completos guardados en:
+- Perfil detallado: ${profilingReportPath}
+- Datos de tiempo: ${timingDataPath}`);
     
     // Clean up
     fs.unlink(videoPath, (err) => {
@@ -308,7 +500,13 @@ Datos completos guardados en ${timingDataPath}`);
     // Still try to save timing data even if there was an error
     timingData.error = error.message;
     timingData.totalTimeMs = performance.now() - totalStartTime;
+    
+    // Also save the profiling data that we collected before the error
+    const profilingReport = profiler.generateReport(timingData.totalTimeMs);
+    timingData.profilingData = profilingReport;
+    
     fs.writeFileSync(timingDataPath, JSON.stringify(timingData, null, 2));
+    fs.writeFileSync(profilingReportPath, JSON.stringify(profilingReport, null, 2));
   }
 });
 
@@ -317,6 +515,7 @@ Datos completos guardados en ${timingDataPath}`);
  * This avoids the issue with structuredClone not preserving methods
  */
 function serializeGameState(gameState) {
+  profiler.start("serializeGameState:properties");
   const serialized = {
     teamCounts: { ...gameState.teamCounts },
     gameTime: gameState.gameTime,
@@ -328,27 +527,32 @@ function serializeGameState(gameState) {
     countdown: gameState.countdown,
     countdownFrames: gameState.countdownFrames,
     initialCountdownFrames: gameState.initialCountdownFrames,
-    
-    // Convert entities to plain data objects
-    entities: gameState.entities.map(entity => ({
-      type: entity.type,
-      x: entity.x,
-      y: entity.y,
-      radius: entity.radius,
-      vx: entity.vx,
-      vy: entity.vy,
-      captureEffect: entity.captureEffect,
-      beingCaptured: entity.beingCaptured
-    })),
-    
-    // Convert capture animations to plain data objects
-    captureAnimations: gameState.captureAnimations.map(anim => ({
-      x: anim.x,
-      y: anim.y,
-      radius: anim.radius,
-      time: anim.time
-    }))
   };
+  profiler.end("serializeGameState:properties");
+  
+  profiler.start("serializeGameState:entities");
+  // Convert entities to plain data objects
+  serialized.entities = gameState.entities.map(entity => ({
+    type: entity.type,
+    x: entity.x,
+    y: entity.y,
+    radius: entity.radius,
+    vx: entity.vx,
+    vy: entity.vy,
+    captureEffect: entity.captureEffect,
+    beingCaptured: entity.beingCaptured
+  }));
+  profiler.end("serializeGameState:entities");
+  
+  profiler.start("serializeGameState:animations");
+  // Convert capture animations to plain data objects
+  serialized.captureAnimations = gameState.captureAnimations.map(anim => ({
+    x: anim.x,
+    y: anim.y,
+    radius: anim.radius,
+    time: anim.time
+  }));
+  profiler.end("serializeGameState:animations");
   
   return serialized;
 }
@@ -365,6 +569,7 @@ function processFrameSimulation(gameState, frameIndex, fps, simulationSpeed) {
     return;
   }
   
+  profiler.start("processFrameSimulation:calculateTime");
   // Calculate game time, excluding the countdown phase completely
   const timeAfterCountdown = frameIndex - gameState.initialCountdownFrames;
   if (timeAfterCountdown >= 0) {
@@ -372,16 +577,23 @@ function processFrameSimulation(gameState, frameIndex, fps, simulationSpeed) {
   } else {
     gameState.gameTime = 0;
   }
+  profiler.end("processFrameSimulation:calculateTime");
   
+  profiler.start("processFrameSimulation:checkGameOver");
   // Check if game over
   if (gameState.gameTime >= gameState.gameDuration && !gameState.gameOver) {
+    profiler.start("determineWinner");
     determineWinner(gameState);
+    profiler.end("determineWinner");
     gameState.gameOver = true;
   }
+  profiler.end("processFrameSimulation:checkGameOver");
   
   // Skip updating the game state if it's game over
   if (!gameState.gameOver) {
+    profiler.start("updateGame");
     updateGame(gameState, deltaTime, simulationSpeed);
+    profiler.end("updateGame");
   }
 }
 
@@ -389,22 +601,33 @@ function processFrameSimulation(gameState, frameIndex, fps, simulationSpeed) {
  * Render a frame from the serialized state
  */
 function renderFrame(context, width, height, fps, serializedState) {
+  profiler.start("renderFrame:background");
   // Draw background
   context.fillStyle = '#e0e0e0';
   context.fillRect(0, 0, width, height);
+  profiler.end("renderFrame:background");
   
   if (serializedState.countdown > 0) {
     // Draw countdown screen
+    profiler.start("drawCountdownScreen");
     drawCountdownScreenFromSerialized(context, serializedState, width, height, fps);
+    profiler.end("drawCountdownScreen");
   } else if (serializedState.gameOver) {
     // Draw game over screen
+    profiler.start("drawResultsScreen");
     drawResultsScreen(context, serializedState, width, height);
+    profiler.end("drawResultsScreen");
   } else {
+    profiler.start("renderFrame:drawEntities");
     // Draw entities from serialized data
     serializedState.entities.forEach(entity => {
+      profiler.start("drawEntity");
       drawEntity(context, entity);
+      profiler.end("drawEntity");
     });
+    profiler.end("renderFrame:drawEntities");
     
+    profiler.start("renderFrame:drawAnimations");
     // Draw capture animations with improved visibility
     serializedState.captureAnimations.forEach(anim => {
       context.beginPath();
@@ -413,7 +636,9 @@ function renderFrame(context, width, height, fps, serializedState) {
       context.lineWidth = 4;
       context.stroke();
     });
+    profiler.end("renderFrame:drawAnimations");
     
+    profiler.start("renderFrame:drawUI");
     // Draw time left
     context.font = 'bold 24px Arial';
     context.fillStyle = '#333333';
@@ -432,6 +657,7 @@ function renderFrame(context, width, height, fps, serializedState) {
     
     context.fillStyle = TEAM_COLORS[TEAM_TYPES.SCISSORS].stroke;
     context.fillText(`Tijera: ${serializedState.teamCounts[TEAM_TYPES.SCISSORS]}`, 20, 90);
+    profiler.end("renderFrame:drawUI");
   }
 }
 
@@ -439,6 +665,7 @@ function renderFrame(context, width, height, fps, serializedState) {
  * Draw an entity from serialized data
  */
 function drawEntity(ctx, entityData) {
+  profiler.start("drawEntity:background");
   const colors = TEAM_COLORS[entityData.type];
   
   // Draw circle background
@@ -449,7 +676,9 @@ function drawEntity(ctx, entityData) {
   ctx.lineWidth = 2;
   ctx.strokeStyle = colors.stroke;
   ctx.stroke();
+  profiler.end("drawEntity:background");
   
+  profiler.start("drawEntity:image");
   // Draw image instead of text
   if (imageCache[entityData.type]) {
     const img = imageCache[entityData.type];
@@ -469,7 +698,9 @@ function drawEntity(ctx, entityData) {
     
     ctx.fillText(text, entityData.x, entityData.y);
   }
+  profiler.end("drawEntity:image");
   
+  profiler.start("drawEntity:captureEffect");
   // Draw capture effect if active
   if (entityData.captureEffect > 0) {
     ctx.beginPath();
@@ -478,6 +709,7 @@ function drawEntity(ctx, entityData) {
     ctx.lineWidth = 3;
     ctx.stroke();
   }
+  profiler.end("drawEntity:captureEffect");
 }
 
 /**
@@ -772,31 +1004,42 @@ class Entity {
 }
 
 function updateGame(state, deltaTime, simulationSpeed) {
-  // Don't update if we're still in countdown
-  if (state.countdown > 0) {
-    return;
-  }
-  
+  profiler.start("updateGame:entities");
   // Update entities
-  state.entities.forEach(entity => entity.update(state, deltaTime, simulationSpeed));
+  state.entities.forEach(entity => {
+    profiler.start("entity.update");
+    entity.update(state, deltaTime, simulationSpeed);
+    profiler.end("entity.update");
+  });
+  profiler.end("updateGame:entities");
   
+  profiler.start("updateGame:collisions");
   // Check for collisions
   for (let i = 0; i < state.entities.length; i++) {
     for (let j = i + 1; j < state.entities.length; j++) {
       const entityA = state.entities[i];
       const entityB = state.entities[j];
       
-      if (entityA.collidesWith(entityB)) {
+      profiler.start("entity.collidesWith");
+      const isColliding = entityA.collidesWith(entityB);
+      profiler.end("entity.collidesWith");
+      
+      if (isColliding) {
+        profiler.start("handleCollision");
         handleCollision(state, entityA, entityB);
+        profiler.end("handleCollision");
       }
     }
   }
+  profiler.end("updateGame:collisions");
   
-  // Update capture animations - faster fading for better visuals
+  profiler.start("updateGame:animations");
+  // Update capture animations
   state.captureAnimations = state.captureAnimations.filter(anim => {
     anim.time -= deltaTime * simulationSpeed * 6;
     return anim.time > 0;
   });
+  profiler.end("updateGame:animations");
 }
 
 function handleCollision(state, entityA, entityB) {
