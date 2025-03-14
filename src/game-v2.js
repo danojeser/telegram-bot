@@ -1,5 +1,5 @@
 import { Composer, InputFile } from "grammy";
-export const apuesta = new Composer();
+export const apuesta2 = new Composer();
 import * as path from "path";
 import * as fs from "fs";
 import { createCanvas, loadImage, Image } from 'canvas';
@@ -63,14 +63,23 @@ async function loadGameImages() {
   }
 }
 
-apuesta.command("apuesta", async (ctx) => {
-  console.log("Ejecutando apuesta");
+/**
+ * This new version of the command separates the simulation from rendering
+ * by first running and storing all simulation states, then rendering them
+ * to improve performance.
+ */
+apuesta2.command("apuesta2", async (ctx) => {
+  console.log("Ejecutando apuesta2 (versión optimizada)");
   const chatId = ctx.chat.id;
   const userId = ctx.from.id;
   const videoPath = path.join("temp", `apuesta_${Date.now()}.mp4`);
-  const framesDir = path.join("temp", `frames_${Date.now()}`);
   const resultImagePath = path.join("temp", `result_${Date.now()}.png`);
   const ffmpegLogPath = "ultimo-log-ffmpeg.log";
+  
+  // Create temp directory if it doesn't exist
+  if (!fs.existsSync('temp')) {
+    fs.mkdirSync('temp', { recursive: true });
+  }
   
   // Add timing data file
   const timingId = Date.now();
@@ -78,23 +87,13 @@ apuesta.command("apuesta", async (ctx) => {
   const timingData = {
     startTime: new Date().toISOString(),
     totalTimeMs: 0,
-    frameTimesMs: [],
-    simulationTimesMs: [], // Add separate array for simulation times
-    saveTimesMs: [], // Add separate array for file saving times
+    simulationPhaseMs: 0,
+    renderingPhaseMs: 0,
+    videoGenerationMs: 0,
     totalFrames: 0,
-    videoGenerationTimeMs: 0,
     userId: userId,
     chatId: chatId
   };
-  
-  // Create directories if they don't exist
-  if (!fs.existsSync(framesDir)) {
-    fs.mkdirSync(framesDir, { recursive: true });
-  }
-  
-  if (!fs.existsSync('temp')) {
-    fs.mkdirSync('temp', { recursive: true });
-  }
   
   const WIDTH = 720;
   const HEIGHT = 1280;
@@ -104,19 +103,19 @@ apuesta.command("apuesta", async (ctx) => {
   const RESULT_DISPLAY_DURATION = 1; // seconds to display the result screen
   const TOTAL_DURATION = GAME_DURATION + COUNTDOWN_DURATION + RESULT_DISPLAY_DURATION;
   const TOTAL_FRAMES = FPS * TOTAL_DURATION;
-  const SIMULATION_SPEED = 1.5; // Speed multiplier for game simulation
+  const SIMULATION_SPEED = 2; // Speed multiplier for game simulation
+  const TEAM_ELEMENTS = 10; // Number of elements per team
   
   // Start timing the entire process
   const totalStartTime = performance.now();
   
   try {
     // Load game images before starting
-    await ctx.reply("Generando simulación...");
+    await ctx.reply("Generando simulación optimizada...");
     const imagesLoaded = await loadGameImages();
     
     // Initialize game parameters
-    const teamElements = 10;
-    const gameState = initializeGameState(WIDTH, HEIGHT, teamElements, GAME_DURATION);
+    const gameState = initializeGameState(WIDTH, HEIGHT, TEAM_ELEMENTS, GAME_DURATION);
     gameState.countdownFrames = COUNTDOWN_DURATION * FPS; // Total countdown frames
     gameState.countdown = gameState.countdownFrames; // Current countdown frames remaining
     gameState.initialCountdownFrames = gameState.countdownFrames; // Store initial value for time calculations
@@ -124,33 +123,135 @@ apuesta.command("apuesta", async (ctx) => {
     // Store the total number of frames for timing data
     timingData.totalFrames = TOTAL_FRAMES;
     
-    // Use a Promise.all approach to generate frames in batches for better performance
-    const batchSize = 10;
-    const batches = Math.ceil(TOTAL_FRAMES / batchSize);
+    // PHASE 1: Run the entire simulation and store all frame states
+    const simulationStartTime = performance.now();
     
-    for (let batch = 0; batch < batches; batch++) {
-      const startFrame = batch * batchSize;
-      const endFrame = Math.min(startFrame + batchSize, TOTAL_FRAMES);
+    // Arrays to store serialized game states for each frame
+    const frameStates = [];
+    
+    // Pre-compute all simulation states and store serialized versions
+    // Use a single game state for all simulations to preserve methods
+    for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
+      // Process the frame - this updates the game state
+      processFrameSimulation(gameState, frameIndex, FPS, SIMULATION_SPEED);
       
-      const batchResults = await Promise.all(
-        Array.from({ length: endFrame - startFrame }, (_, i) => {
-          const frameIndex = startFrame + i;
-          return generateFrame(frameIndex, framesDir, WIDTH, HEIGHT, FPS, TOTAL_FRAMES, gameState, SIMULATION_SPEED);
-        })
-      );
+      // Store a serialized copy of the current state
+      // Convert entities to plain objects and store only their data
+      const serializedState = serializeGameState(gameState);
+      frameStates.push(serializedState);
       
-      // Collect timing data from each frame generation
-      batchResults.forEach(result => {
-        timingData.frameTimesMs.push(result.totalTimeMs);
-        timingData.simulationTimesMs.push(result.simulationTimeMs);
-        timingData.saveTimesMs.push(result.saveTimeMs);
-      });
+      // Log progress periodically during simulation
+      if (frameIndex % 100 === 0) {
+        console.log(`Simulated frame ${frameIndex}/${TOTAL_FRAMES} (${Math.round(frameIndex/TOTAL_FRAMES*100)}%)`);
+      }
     }
     
-    // Generate results image separately
+    timingData.simulationPhaseMs = performance.now() - simulationStartTime;
+    console.log(`Simulation phase completed in ${timingData.simulationPhaseMs.toFixed(2)}ms`);
+    
+    // PHASE 2: Set up video generation and render frames
+    const renderingStartTime = performance.now();
+    
+    // Create a log file stream for FFmpeg
+    const logStream = fs.createWriteStream(ffmpegLogPath, { flags: 'a' });
+    logStream.write(`\n--- FFmpeg log for ${videoPath} (${new Date().toISOString()}) ---\n`);
+    
+    // Set up FFmpeg process to receive frames directly via stdin pipe
+    const ffmpegProcess = spawn('ffmpeg', [
+      '-y', // Overwrite output files without asking
+      '-f', 'image2pipe', // Specify that we're piping in image data
+      '-framerate', FPS.toString(), // Input framerate
+      '-i', '-', // Input from stdin
+      '-c:v', 'libx264', // Use H.264 codec
+      '-pix_fmt', 'yuv420p', // Standard pixel format
+      '-preset', 'fast', // Encoding preset (fast encoding)
+      '-crf', '22', // Quality level (lower is better quality, higher is smaller file)
+      videoPath // Output file
+    ]);
+    
+    // Pipe FFmpeg stderr to our log file
+    ffmpegProcess.stderr.on('data', (data) => {
+      logStream.write(data);
+    });
+    
+    // Handle potential errors
+    ffmpegProcess.on('error', (err) => {
+      console.error('FFmpeg process error:', err);
+      logStream.write(`\nFFmpeg process error: ${err.message}\n`);
+      logStream.end();
+    });
+    
+    // Start timing video generation
+    const videoStartTime = performance.now();
+    
+    // Create canvas for rendering frames
+    const canvas = createCanvas(WIDTH, HEIGHT);
+    const context = canvas.getContext('2d');
+    
+    // Render each frame from the serialized states
+    for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
+      // Clear the canvas for this frame
+      context.clearRect(0, 0, WIDTH, HEIGHT);
+      
+      // Render this frame using the serialized state
+      renderFrame(context, WIDTH, HEIGHT, FPS, frameStates[frameIndex]);
+      
+      // Convert canvas to PNG buffer and pipe directly to FFmpeg
+      const pngStream = canvas.createPNGStream();
+      
+      // Write frame to FFmpeg input
+      await new Promise((resolve, reject) => {
+        pngStream.on('data', (chunk) => {
+          // Check if we can still write to the FFmpeg process
+          if (ffmpegProcess.stdin.writable) {
+            const canContinue = ffmpegProcess.stdin.write(chunk);
+            if (!canContinue) {
+              // If the buffer is full, wait for drain event before continuing
+              ffmpegProcess.stdin.once('drain', resolve);
+            } else {
+              process.nextTick(resolve);
+            }
+          } else {
+            reject(new Error('FFmpeg stdin is not writable'));
+          }
+        });
+        pngStream.on('end', resolve);
+        pngStream.on('error', reject);
+      });
+      
+      // Log progress periodically
+      if (frameIndex % 30 === 0) {
+        console.log(`Rendered frame ${frameIndex}/${TOTAL_FRAMES} (${Math.round(frameIndex/TOTAL_FRAMES*100)}%)`);
+      }
+    }
+    
+    // Calculate rendering phase time
+    timingData.renderingPhaseMs = performance.now() - renderingStartTime;
+    
+    // Close the FFmpeg input stream to signal we're done sending frames
+    ffmpegProcess.stdin.end();
+    
+    // Wait for FFmpeg to finish processing
+    await new Promise((resolve, reject) => {
+      ffmpegProcess.on('close', (code) => {
+        logStream.write(`\nFFmpeg process exited with code ${code}\n`);
+        logStream.end();
+        
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}`));
+        }
+      });
+    });
+    
+    // Calculate video generation time
+    timingData.videoGenerationMs = performance.now() - videoStartTime;
+    
+    // Generate results image separately (using the final game state)
     const resultCanvas = createCanvas(WIDTH, HEIGHT);
     const resultContext = resultCanvas.getContext('2d');
-    drawResultsScreen(resultContext, gameState, WIDTH, HEIGHT);
+    drawResultsScreen(resultContext, frameStates[frameStates.length - 1], WIDTH, HEIGHT);
     
     // Save results image
     const resultOut = fs.createWriteStream(resultImagePath);
@@ -162,15 +263,6 @@ apuesta.command("apuesta", async (ctx) => {
       resultOut.on('error', reject);
     });
     
-    // Start timing video generation
-    const videoStartTime = performance.now();
-    
-    // Use ffmpeg to combine frames into video
-    await generateVideoWithFFmpeg(framesDir, videoPath, FPS, ffmpegLogPath);
-    
-    // Calculate video generation time
-    timingData.videoGenerationTimeMs = performance.now() - videoStartTime;
-    
     // Send the video and results image
     await ctx.replyWithVideo(new InputFile(videoPath));
     await ctx.replyWithPhoto(new InputFile(resultImagePath), {
@@ -181,28 +273,12 @@ apuesta.command("apuesta", async (ctx) => {
     timingData.totalTimeMs = performance.now() - totalStartTime;
     
     // Add some statistics
-    const frameTimesMs = timingData.frameTimesMs;
-    const simulationTimesMs = timingData.simulationTimesMs;
-    const saveTimesMs = timingData.saveTimesMs;
-    
     timingData.stats = {
-      // Total frame time stats
-      minFrameTimeMs: Math.min(...frameTimesMs),
-      maxFrameTimeMs: Math.max(...frameTimesMs),
-      avgFrameTimeMs: frameTimesMs.reduce((a, b) => a + b, 0) / frameTimesMs.length,
-      medianFrameTimeMs: [...frameTimesMs].sort((a, b) => a - b)[Math.floor(frameTimesMs.length / 2)],
-      
-      // Simulation time stats
-      minSimulationTimeMs: Math.min(...simulationTimesMs),
-      maxSimulationTimeMs: Math.max(...simulationTimesMs),
-      avgSimulationTimeMs: simulationTimesMs.reduce((a, b) => a + b, 0) / simulationTimesMs.length,
-      medianSimulationTimeMs: [...simulationTimesMs].sort((a, b) => a - b)[Math.floor(simulationTimesMs.length / 2)],
-      
-      // Save time stats
-      minSaveTimeMs: Math.min(...saveTimesMs),
-      maxSaveTimeMs: Math.max(...saveTimesMs),
-      avgSaveTimeMs: saveTimesMs.reduce((a, b) => a + b, 0) / saveTimesMs.length,
-      medianSaveTimeMs: [...saveTimesMs].sort((a, b) => a - b)[Math.floor(saveTimesMs.length / 2)]
+      framesPerSecond: FPS,
+      totalFrames: TOTAL_FRAMES,
+      simulationTimePercentage: (timingData.simulationPhaseMs / timingData.totalTimeMs * 100).toFixed(2),
+      renderingTimePercentage: (timingData.renderingPhaseMs / timingData.totalTimeMs * 100).toFixed(2),
+      videoGenerationTimePercentage: (timingData.videoGenerationMs / timingData.totalTimeMs * 100).toFixed(2)
     };
     
     // Save the timing data to a file
@@ -210,13 +286,13 @@ apuesta.command("apuesta", async (ctx) => {
     console.log(`Timing data saved to ${timingDataPath}`);
     
     // Let the user know about the timing data
-    await ctx.reply(`Simulación completada en ${(timingData.totalTimeMs/1000).toFixed(2)} segundos. Datos de rendimiento guardados en ${timingDataPath}`);
+    await ctx.reply(`Simulación optimizada completada en ${(timingData.totalTimeMs/1000).toFixed(2)} segundos.
+- Fase de simulación: ${(timingData.simulationPhaseMs/1000).toFixed(2)}s (${timingData.stats.simulationTimePercentage}%)
+- Fase de renderizado: ${(timingData.totalTimeMs / 1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
+- Generación de video: ${(timingData.videoGenerationMs / 1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
+Datos completos guardados en ${timingDataPath}`);
     
     // Clean up
-    fs.rm(framesDir, { recursive: true, force: true }, (err) => {
-      if (err) console.error("Error removing frame directory:", err);
-    });
-    
     fs.unlink(videoPath, (err) => {
       if (err) console.error("Error deleting video file:", err);
     });
@@ -227,7 +303,7 @@ apuesta.command("apuesta", async (ctx) => {
     
   } catch (error) {
     console.error("Error generating video:", error);
-    await ctx.reply("Ocurrió un error al generar el video de la simulación.");
+    await ctx.reply("Ocurrió un error al generar el video de la simulación optimizada.");
     
     // Still try to save timing data even if there was an error
     timingData.error = error.message;
@@ -236,99 +312,220 @@ apuesta.command("apuesta", async (ctx) => {
   }
 });
 
-async function generateFrame(frameIndex, framesDir, width, height, fps, totalFrames, gameState, simulationSpeed) {
-  // Start timing the entire frame generation
-  const frameStartTime = performance.now();
+/**
+ * Converts the game state to a plain serializable object
+ * This avoids the issue with structuredClone not preserving methods
+ */
+function serializeGameState(gameState) {
+  const serialized = {
+    teamCounts: { ...gameState.teamCounts },
+    gameTime: gameState.gameTime,
+    gameDuration: gameState.gameDuration,
+    width: gameState.width,
+    height: gameState.height,
+    winner: gameState.winner,
+    gameOver: gameState.gameOver,
+    countdown: gameState.countdown,
+    countdownFrames: gameState.countdownFrames,
+    initialCountdownFrames: gameState.initialCountdownFrames,
+    
+    // Convert entities to plain data objects
+    entities: gameState.entities.map(entity => ({
+      type: entity.type,
+      x: entity.x,
+      y: entity.y,
+      radius: entity.radius,
+      vx: entity.vx,
+      vy: entity.vy,
+      captureEffect: entity.captureEffect,
+      beingCaptured: entity.beingCaptured
+    })),
+    
+    // Convert capture animations to plain data objects
+    captureAnimations: gameState.captureAnimations.map(anim => ({
+      x: anim.x,
+      y: anim.y,
+      radius: anim.radius,
+      time: anim.time
+    }))
+  };
   
-  // Simulation part
-  const simulationStartTime = performance.now();
-  
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext('2d');
-  const playhead = frameIndex / totalFrames;
-  
-  // Call the rendering function
-  const renderer = myVideo();
-  renderer({ 
-    canvas, 
-    context, 
-    width, 
-    height, 
-    playhead,
-    frameIndex,
-    fps,
-    gameState,
-    simulationSpeed
-  });
-  
-  // Calculate simulation time
-  const simulationTimeMs = performance.now() - simulationStartTime;
-  
-  // File saving part
-  const saveStartTime = performance.now();
-  
-  // Save the frame
-  const framePath = path.join(framesDir, `frame_${frameIndex.toString().padStart(6, '0')}.png`);
-  const out = fs.createWriteStream(framePath);
-  const stream = canvas.createPNGStream();
-  stream.pipe(out);
-  
-  return new Promise((resolve, reject) => {
-    out.on('finish', () => {
-      // Calculate file save time
-      const saveTimeMs = performance.now() - saveStartTime;
-      // Calculate total time
-      const totalTimeMs = performance.now() - frameStartTime;
-      
-      resolve({ 
-        frameIndex,
-        simulationTimeMs,
-        saveTimeMs,
-        totalTimeMs
-      });
-    });
-    out.on('error', reject);
-  });
+  return serialized;
 }
 
-async function generateVideoWithFFmpeg(framesDir, outputPath, fps, logPath) {
-  return new Promise((resolve, reject) => {
-    // Create a log file stream
-    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-    logStream.write(`\n--- FFmpeg log for ${outputPath} (${new Date().toISOString()}) ---\n`);
-    
-    const ffmpeg = spawn('ffmpeg', [
-      '-framerate', fps.toString(),
-      '-i', path.join(framesDir, 'frame_%06d.png'),
-      '-c:v', 'libx264',
-      '-pix_fmt', 'yuv420p',
-      '-preset', 'fast',
-      '-crf', '22',
-      outputPath
-    ]);
-    
-    ffmpeg.stderr.on('data', data => {
-      // Write to log file instead of console
-      logStream.write(data);
+/**
+ * Process a single frame's simulation (without rendering)
+ */
+function processFrameSimulation(gameState, frameIndex, fps, simulationSpeed) {
+  const deltaTime = 1 / fps;
+  
+  // Handle countdown phase
+  if (gameState.countdown > 0) {
+    gameState.countdown--;
+    return;
+  }
+  
+  // Calculate game time, excluding the countdown phase completely
+  const timeAfterCountdown = frameIndex - gameState.initialCountdownFrames;
+  if (timeAfterCountdown >= 0) {
+    gameState.gameTime = timeAfterCountdown / fps;
+  } else {
+    gameState.gameTime = 0;
+  }
+  
+  // Check if game over
+  if (gameState.gameTime >= gameState.gameDuration && !gameState.gameOver) {
+    determineWinner(gameState);
+    gameState.gameOver = true;
+  }
+  
+  // Skip updating the game state if it's game over
+  if (!gameState.gameOver) {
+    updateGame(gameState, deltaTime, simulationSpeed);
+  }
+}
+
+/**
+ * Render a frame from the serialized state
+ */
+function renderFrame(context, width, height, fps, serializedState) {
+  // Draw background
+  context.fillStyle = '#e0e0e0';
+  context.fillRect(0, 0, width, height);
+  
+  if (serializedState.countdown > 0) {
+    // Draw countdown screen
+    drawCountdownScreenFromSerialized(context, serializedState, width, height, fps);
+  } else if (serializedState.gameOver) {
+    // Draw game over screen
+    drawResultsScreen(context, serializedState, width, height);
+  } else {
+    // Draw entities from serialized data
+    serializedState.entities.forEach(entity => {
+      drawEntity(context, entity);
     });
     
-    ffmpeg.on('close', code => {
-      logStream.write(`\nFFmpeg process exited with code ${code}\n`);
-      logStream.end();
-      
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
-      }
+    // Draw capture animations with improved visibility
+    serializedState.captureAnimations.forEach(anim => {
+      context.beginPath();
+      context.arc(anim.x, anim.y, anim.radius * (1 + anim.time), 0, Math.PI * 2);
+      context.strokeStyle = `rgba(255, 255, 255, ${anim.time})`;
+      context.lineWidth = 4;
+      context.stroke();
     });
     
-    ffmpeg.on('error', err => {
-      logStream.write(`\nFFmpeg process error: ${err.message}\n`);
-      logStream.end();
-      reject(err);
-    });
+    // Draw time left
+    context.font = 'bold 24px Arial';
+    context.fillStyle = '#333333';
+    context.textAlign = 'center';
+    const timeLeft = Math.max(0, Math.ceil(serializedState.gameDuration - serializedState.gameTime));
+    context.fillText(`Tiempo: ${timeLeft}s`, width / 2, 30);
+    
+    // Draw team counts - all on the left with proper spacing
+    context.font = 'bold 24px Arial';
+    context.textAlign = 'left';
+    context.fillStyle = TEAM_COLORS[TEAM_TYPES.ROCK].stroke;
+    context.fillText(`Piedra: ${serializedState.teamCounts[TEAM_TYPES.ROCK]}`, 20, 30);
+    
+    context.fillStyle = TEAM_COLORS[TEAM_TYPES.PAPER].stroke;
+    context.fillText(`Papel: ${serializedState.teamCounts[TEAM_TYPES.PAPER]}`, 20, 60);
+    
+    context.fillStyle = TEAM_COLORS[TEAM_TYPES.SCISSORS].stroke;
+    context.fillText(`Tijera: ${serializedState.teamCounts[TEAM_TYPES.SCISSORS]}`, 20, 90);
+  }
+}
+
+/**
+ * Draw an entity from serialized data
+ */
+function drawEntity(ctx, entityData) {
+  const colors = TEAM_COLORS[entityData.type];
+  
+  // Draw circle background
+  ctx.beginPath();
+  ctx.arc(entityData.x, entityData.y, entityData.radius, 0, Math.PI * 2);
+  ctx.fillStyle = colors.fill;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = colors.stroke;
+  ctx.stroke();
+  
+  // Draw image instead of text
+  if (imageCache[entityData.type]) {
+    const img = imageCache[entityData.type];
+    const imgSize = entityData.radius * 1.8; // Slightly larger than radius
+    ctx.drawImage(img, entityData.x - imgSize/2, entityData.y - imgSize/2, imgSize, imgSize);
+  } else {
+    // Fallback if image not loaded
+    ctx.font = `${entityData.radius * 1.2}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = colors.stroke;
+    
+    let text = '';
+    if (entityData.type === TEAM_TYPES.ROCK) text = 'R';
+    else if (entityData.type === TEAM_TYPES.PAPER) text = 'P';
+    else text = 'S';
+    
+    ctx.fillText(text, entityData.x, entityData.y);
+  }
+  
+  // Draw capture effect if active
+  if (entityData.captureEffect > 0) {
+    ctx.beginPath();
+    ctx.arc(entityData.x, entityData.y, entityData.radius * (1 + entityData.captureEffect * 0.5), 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${entityData.captureEffect})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+}
+
+/**
+ * Draw countdown screen using serialized entity data
+ */
+function drawCountdownScreenFromSerialized(ctx, serializedState, width, height, fps) {
+  // Clear the canvas
+  ctx.clearRect(0, 0, width, height);
+  
+  // Draw background
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(0, 0, width, height);
+  
+  // Draw all entities but without movement
+  serializedState.entities.forEach(entity => {
+    drawEntity(ctx, entity);
   });
+  
+  // Draw the countdown number
+  const countdownSeconds = Math.ceil(serializedState.countdown / fps);
+  let countdownImage;
+  
+  if (countdownSeconds === 3) {
+    countdownImage = imageCache['countdown_3'];
+  } else if (countdownSeconds === 2) {
+    countdownImage = imageCache['countdown_2'];
+  } else if (countdownSeconds === 1) {
+    countdownImage = imageCache['countdown_1'];
+  } else {
+    countdownImage = imageCache['countdown_go'];
+  }
+  
+  // Draw the countdown image or fallback to text
+  if (countdownImage) {
+    const imgSize = Math.min(width, height) * 0.3;
+    ctx.drawImage(countdownImage, (width - imgSize) / 2, (height - imgSize) / 2, imgSize, imgSize);
+  } else {
+    // Fallback to text
+    ctx.fillStyle = '#333333';
+    ctx.font = 'bold 96px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      countdownSeconds > 0 ? countdownSeconds.toString() : '¡YA!', 
+      width / 2, 
+      height / 2
+    );
+  }
 }
 
 function initializeGameState(width, height, teamElements, gameDuration) {
@@ -574,125 +771,6 @@ class Entity {
   }
 }
 
-function myVideo() {
-  // provide a function to draw video frames
-  return function ({ canvas, context, width, height, playhead, frameIndex, fps, gameState, simulationSpeed }) {
-    const deltaTime = 1 / fps;
-    
-    // Handle countdown phase
-    if (gameState.countdown > 0) {
-      // Draw countdown screen
-      drawCountdownScreen(context, gameState, width, height, fps);
-      gameState.countdown--;
-      return;
-    }
-    
-    // Calculate game time, excluding the countdown phase completely
-    // This ensures the game gets its full duration regardless of countdown
-    const timeAfterCountdown = frameIndex - gameState.initialCountdownFrames;
-    if (timeAfterCountdown >= 0) {
-      gameState.gameTime = timeAfterCountdown / fps;
-    } else {
-      gameState.gameTime = 0; // Shouldn't happen but just in case
-    }
-    
-    // Check if game over
-    if (gameState.gameTime >= gameState.gameDuration && !gameState.gameOver) {
-      determineWinner(gameState);
-      gameState.gameOver = true;
-    }
-    
-    // Clear canvas
-    context.clearRect(0, 0, width, height);
-    
-    // Draw background
-    context.fillStyle = '#e0e0e0';
-    context.fillRect(0, 0, width, height);
-    
-    if (gameState.gameOver) {
-      // Draw game over screen
-      drawResultsScreen(context, gameState, width, height);
-    } else {
-      // Update game state
-      updateGame(gameState, deltaTime, simulationSpeed);
-      
-      // Draw entities
-      gameState.entities.forEach(entity => entity.draw(context));
-      
-      // Draw capture animations with improved visibility
-      gameState.captureAnimations.forEach(anim => {
-        context.beginPath();
-        context.arc(anim.x, anim.y, anim.radius * (1 + anim.time), 0, Math.PI * 2);
-        context.strokeStyle = `rgba(255, 255, 255, ${anim.time})`;
-        context.lineWidth = 4;
-        context.stroke();
-      });
-      
-      // Draw time left
-      context.font = 'bold 24px Arial';
-      context.fillStyle = '#333333';
-      context.textAlign = 'center';
-      const timeLeft = Math.max(0, Math.ceil(gameState.gameDuration - gameState.gameTime));
-      context.fillText(`Tiempo: ${timeLeft}s`, width / 2, 30);
-      
-      // Draw team counts - all on the left with proper spacing
-      context.font = 'bold 24px Arial';
-      context.textAlign = 'left';
-      context.fillStyle = TEAM_COLORS[TEAM_TYPES.ROCK].stroke;
-      context.fillText(`Piedra: ${gameState.teamCounts[TEAM_TYPES.ROCK]}`, 20, 30);
-      
-      context.fillStyle = TEAM_COLORS[TEAM_TYPES.PAPER].stroke;
-      context.fillText(`Papel: ${gameState.teamCounts[TEAM_TYPES.PAPER]}`, 20, 60);
-      
-      context.fillStyle = TEAM_COLORS[TEAM_TYPES.SCISSORS].stroke;
-      context.fillText(`Tijera: ${gameState.teamCounts[TEAM_TYPES.SCISSORS]}`, 20, 90);
-    }
-  };
-}
-
-function drawCountdownScreen(ctx, state, width, height, fps) {
-  // Clear the canvas
-  ctx.clearRect(0, 0, width, height);
-  
-  // Draw background
-  ctx.fillStyle = '#e0e0e0';
-  ctx.fillRect(0, 0, width, height);
-  
-  // Draw all entities but without movement
-  state.entities.forEach(entity => entity.draw(ctx));
-  
-  // Draw the countdown number
-  const countdownSeconds = Math.ceil(state.countdown / fps);
-  let countdownImage;
-  
-  if (countdownSeconds === 3) {
-    countdownImage = imageCache['countdown_3'];
-  } else if (countdownSeconds === 2) {
-    countdownImage = imageCache['countdown_2'];
-  } else if (countdownSeconds === 1) {
-    countdownImage = imageCache['countdown_1'];
-  } else {
-    countdownImage = imageCache['countdown_go'];
-  }
-  
-  // Draw the countdown image or fallback to text
-  if (countdownImage) {
-    const imgSize = Math.min(width, height) * 0.3;
-    ctx.drawImage(countdownImage, (width - imgSize) / 2, (height - imgSize) / 2, imgSize, imgSize);
-  } else {
-    // Fallback to text
-    ctx.fillStyle = '#333333';
-    ctx.font = 'bold 96px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      countdownSeconds > 0 ? countdownSeconds.toString() : '¡YA!', 
-      width / 2, 
-      height / 2
-    );
-  }
-}
-
 function updateGame(state, deltaTime, simulationSpeed) {
   // Don't update if we're still in countdown
   if (state.countdown > 0) {
@@ -783,6 +861,49 @@ function determineWinner(state) {
     state.winner = TEAM_TYPES.SCISSORS;
   } else {
     state.winner = "tie";
+  }
+}
+
+function drawCountdownScreen(ctx, state, width, height, fps) {
+  // Clear the canvas
+  ctx.clearRect(0, 0, width, height);
+  
+  // Draw background
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(0, 0, width, height);
+  
+  // Draw all entities but without movement
+  state.entities.forEach(entity => entity.draw(ctx));
+  
+  // Draw the countdown number
+  const countdownSeconds = Math.ceil(state.countdown / fps);
+  let countdownImage;
+  
+  if (countdownSeconds === 3) {
+    countdownImage = imageCache['countdown_3'];
+  } else if (countdownSeconds === 2) {
+    countdownImage = imageCache['countdown_2'];
+  } else if (countdownSeconds === 1) {
+    countdownImage = imageCache['countdown_1'];
+  } else {
+    countdownImage = imageCache['countdown_go'];
+  }
+  
+  // Draw the countdown image or fallback to text
+  if (countdownImage) {
+    const imgSize = Math.min(width, height) * 0.3;
+    ctx.drawImage(countdownImage, (width - imgSize) / 2, (height - imgSize) / 2, imgSize, imgSize);
+  } else {
+    // Fallback to text
+    ctx.fillStyle = '#333333';
+    ctx.font = 'bold 96px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      countdownSeconds > 0 ? countdownSeconds.toString() : '¡YA!', 
+      width / 2, 
+      height / 2
+    );
   }
 }
 

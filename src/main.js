@@ -11,10 +11,11 @@ import dualAdapter from './db/dualAdapter.js';
 import { createCanvas } from 'canvas';
 import * as path from 'path';
 import { apuesta } from './ppt-game.js';
+import { apuesta2 } from './game-v2.js';
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN;
+const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
@@ -577,7 +578,8 @@ bot.command("yearstats", async (ctx) => {
     }
 });
 
-bot.use(apuesta); 
+bot.use(apuesta);
+bot.use(apuesta2);
 
 bot.start();
 
