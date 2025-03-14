@@ -2,7 +2,7 @@ import { Composer, InputFile } from "grammy";
 export const apuesta2 = new Composer();
 import * as path from "path";
 import * as fs from "fs";
-import { createCanvas, loadImage, Image } from 'canvas';
+import { createCanvas, loadImage } from 'canvas';
 import { spawn } from 'child_process';
 import { performance } from 'perf_hooks';
 import { Profiler } from './utils/profiler.js';
@@ -62,9 +62,6 @@ async function loadGameImages() {
     for (const [type, imagePath] of Object.entries(imagePaths)) {
       imageCache[type] = await loadImage(imagePath);
     }
-    
-    // Pre-render entity sprites at various sizes for common radius values
-    await preRenderEntitySprites();
 
     return true;
   } catch (error) {
@@ -75,12 +72,15 @@ async function loadGameImages() {
 
 // Add a new function to pre-render entity sprites
 async function preRenderEntitySprites() {
-  profiler.start("util:preRenderEntitySprites");
-  console.log("Pre-rendering entity sprites...");
+  // Cargar las imagenes antes de convertilas en canvas
+  profiler.start("loadGameImages");
+  await loadGameImages();
+  profiler.end("loadGameImages");
   
   // Define a set of common entity sizes that will be used
   // The keys will be used as identifiers like "rock_21.6" for a rock with radius 21.6
-  const radiusSizes = [10, 15, 20, 21.6, 25, 30]; // 21.6 is the typical size (0.03 * 720)
+  // TODO: Modificar para solo usar el 21.6
+  const radiusSizes = [21.6]; // 21.6 is the typical size (0.03 * 720)
   
   // Pre-render sprites for each entity type and size
   for (const type of [TEAM_TYPES.ROCK, TEAM_TYPES.PAPER, TEAM_TYPES.SCISSORS]) {
@@ -143,7 +143,7 @@ async function preRenderEntitySprites() {
   }
   
   console.log(`Pre-rendered ${Object.keys(spriteCache).length} sprites`);
-  profiler.end("util:preRenderEntitySprites");
+  // profiler.end("util:preRenderEntitySprites");
 }
 
 /**
@@ -151,7 +151,7 @@ async function preRenderEntitySprites() {
  * by first running and storing all simulation states, then rendering them
  * to improve performance.
  */
-apuesta2.command("apuesta2", async (ctx) => {
+const comando = apuesta2.command("apuesta2", async (ctx) => {
   console.log("Ejecutando apuesta2 (versión optimizada)");
   const chatId = ctx.chat.id;
   const userId = ctx.from.id;
@@ -196,14 +196,14 @@ apuesta2.command("apuesta2", async (ctx) => {
   const totalStartTime = performance.now();
   
   try {
+    await ctx.reply("Generando simulación con profiling detallado...");
     // PHASE 0: Initialization phase (loading assets, setup)
     profiler.start("phase:initialization");
-    
+
     // Load game images before starting
-    profiler.start("operation:loadGameImages");
-    await ctx.reply("Generando simulación con profiling detallado...");
-    const imagesLoaded = await loadGameImages();
-    profiler.end("operation:loadGameImages");
+    profiler.start("preRenderEntitySprites");
+    await preRenderEntitySprites();
+    profiler.end("preRenderEntitySprites");
     
     // Initialize game parameters
     profiler.start("operation:initializeGameState");
@@ -307,13 +307,7 @@ apuesta2.command("apuesta2", async (ctx) => {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const context = canvas.getContext('2d');
     profiler.end("setup:canvas");
-    
-    // Detailed timing data for rendering breakdown
-    const renderingBreakdown = {
-      renderingTime: 0,
-      encodingTime: 0,
-      writingTime: 0
-    };
+
     
     // Render each frame from the serialized states
     for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
@@ -485,8 +479,7 @@ Reporte completo guardado en:
     timingData.totalTimeMs = performance.now() - totalStartTime;
     
     // Also save the profiling data that we collected before the error
-    const profilingReport = profiler.generateReport(timingData.totalTimeMs);
-    timingData.profilingData = profilingReport;
+    timingData.profilingData = profiler.generateReport(timingData.totalTimeMs);
     
     fs.writeFileSync(timingDataPath, JSON.stringify(timingData, null, 2));
   }
@@ -679,8 +672,8 @@ function drawEntity(ctx, entityData) {
     );
     profiler.end("operation:drawEntity:drawPreRendered");
   } else {
-    // Fallback to the old method in case the sprite is not in the cache
-    profiler.start("operation:drawEntity:background");
+    // TODO: Añadir un profiler
+    // Fallback to the old method, draw only the letter
     const colors = TEAM_COLORS[entityData.type];
     
     // Draw circle background
@@ -691,29 +684,18 @@ function drawEntity(ctx, entityData) {
     ctx.lineWidth = 2;
     ctx.strokeStyle = colors.stroke;
     ctx.stroke();
-    profiler.end("operation:drawEntity:background");
-    
-    profiler.start("operation:drawEntity:image");
-    // Draw image instead of text
-    if (imageCache[entityData.type]) {
-      const img = imageCache[entityData.type];
-      const imgSize = radius * 1.8; // Slightly larger than radius
-      ctx.drawImage(img, x - imgSize/2, y - imgSize/2, imgSize, imgSize);
-    } else {
-      // Fallback if image not loaded
-      ctx.font = `${radius * 1.2}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = colors.stroke;
-      
-      let text = '';
-      if (entityData.type === TEAM_TYPES.ROCK) text = 'R';
-      else if (entityData.type === TEAM_TYPES.PAPER) text = 'P';
-      else text = 'S';
-      
-      ctx.fillText(text, x, y);
-    }
-    profiler.end("operation:drawEntity:image");
+    // Fallback if image not loaded
+    ctx.font = `${radius * 1.2}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = colors.stroke;
+
+    let text;
+    if (entityData.type === TEAM_TYPES.ROCK) text = 'R';
+    else if (entityData.type === TEAM_TYPES.PAPER) text = 'P';
+    else text = 'S';
+
+    ctx.fillText(text, x, y);
   }
   
   // Draw capture effect if active
@@ -943,7 +925,7 @@ class Entity {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = colors.stroke;
       
-      let text = '';
+      let text;
       if (this.type === TEAM_TYPES.ROCK) text = 'R';
       else if (this.type === TEAM_TYPES.PAPER) text = 'P';
       else text = 'S';
