@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        h1, h2, h3 {
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-inputs {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .file-input-container {
+            flex: 1 0 300px; /* Minimum width to prevent squishing */
+            padding: 15px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        
+        .charts-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .chart-container {
+            flex: 1 0 45%;
+            min-width: 300px;
+            height: 400px; /* Increased height for better visualization */
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background-color: white;
+            position: relative; /* For chart positioning */
+            overflow: hidden; /* Prevent overflow */
+        }
+
+        .table-container {
+            flex: 1 0 45%;
+            min-width: 300px;
+            height: auto; /* Increased height for better visualization */
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background-color: white;
+            position: relative; /* For chart positioning */
+            overflow: hidden; /* Prevent overflow */
+        }
+        
+        .full-width {
+            flex: 1 0 100%;
+        }
+        
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto; /* Add horizontal scroll for tables on small screens */
+            margin-bottom: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0; /* Adjusted margin */
+        }
+        
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        
+        th, td {
+            padding: 10px;
+            text-align: left;
+            white-space: nowrap; /* Prevent text wrapping in cells */
+        }
+        
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .improvement {
+            color: green;
+            font-weight: bold;
+        }
+        
+        .regression {
+            color: red;
+            font-weight: bold;
+        }
+        
+        .highlight {
+            background-color: #ffffcc;
+        }
+        
+        .comparison-toggle {
+            margin: 10px 0;
+        }
+        
+        .card {
+            flex: 1 0 100%;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background-color: white;
+            overflow: hidden; /* Prevent content overflow */
+        }
+        
+        .summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-card {
+            flex: 1 0 250px; /* Increased minimum width */
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden; /* Prevent content overflow */
+        }
+        
+        .summary-card h3 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        input[type="file"] {
+            margin-bottom: 10px;
+            max-width: 100%; /* Ensure input doesn't overflow */
+        }
+        
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        #topFunctionsTable tbody tr:hover {
+            background-color: #e6f7ff;
+            cursor: pointer;
+        }
+        
+        /* Function name cell max width */
+        .function-name-cell {
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Media queries for better responsiveness */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .chart-container {
+                flex: 1 0 100%;
+                height: 350px;
+            }
+            
+            .summary-card {
+                flex: 1 0 100%;
+            }
+        }
+        
+        /* Loading indicator for charts */
+        .chart-loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        /* Function Hierarchy Tree Styles */
+        .tree-node {
+            margin: 2px 0;
+            font-family: monospace;
+        }
+        
+        .tree-node-content {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+        
+        .tree-node-content:hover {
+            background-color: #f0f7ff;
+        }
+        
+        .tree-toggle {
+            display: inline-block;
+            width: 16px;
+            text-align: center;
+            color: #555;
+            font-size: 10px;
+        }
+        
+        .tree-children {
+            margin-left: 10px;
+        }
+        
+        .time-bar-container {
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 0 1px rgba(0,0,0,0.2) inset;
+        }
+        
+        .time-bar {
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simulation Performance Dashboard</h1>
+        
+        <div class="file-inputs">
+            <div class="file-input-container">
+                <h3>Load Primary Data File</h3>
+                <input type="file" id="fileInput1" accept=".json">
+                <div id="fileInfo1"></div>
+            </div>
+            
+            <div class="file-input-container">
+                <h3>Load Comparison Data File (Optional)</h3>
+                <input type="file" id="fileInput2" accept=".json">
+                <div id="fileInfo2"></div>
+            </div>
+        </div>
+        
+        <div class="comparison-toggle" id="comparisonToggle" style="display: none;">
+            <button id="toggleComparison">Toggle Comparison View</button>
+            <span id="comparisonMode">Current mode: Side by Side</span>
+        </div>
+        
+        <div class="card">
+            <h2>Summary</h2>
+            <div class="summary" id="summaryContainer"></div>
+        </div>
+        
+        <div class="charts-container">
+            <div class="chart-container">
+                <h3>Phase Timing Breakdown</h3>
+                <canvas id="phaseChart"></canvas>
+                <div id="phaseChartLoading" class="chart-loading" style="display: none;">Loading...</div>
+            </div>
+            
+            <div class="chart-container">
+                <h3>Function Timing Percentages</h3>
+                <canvas id="functionPercentageChart"></canvas>
+                <div id="functionPercentageChartLoading" class="chart-loading" style="display: none;">Loading...</div>
+            </div>
+            
+            <div class="table-container full-width">
+                <h3>Top Functions by Execution Time</h3>
+                <div class="table-wrapper">
+                    <table id="topFunctionsTable">
+                        <thead>
+                            <tr>
+                                <th>Function Name</th>
+                                <th>Time (ms)</th>
+                                <th>% of Total</th>
+                                <th>Call Count</th>
+                                <th>Avg Time per Call (ms)</th>
+                                <th id="compareColumn" style="display: none;">Difference</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topFunctionsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Selected Function Details</h2>
+                <div id="functionDetails">Select a function from the table above to see details.</div>
+            </div>
+            
+            <div class="chart-container full-width">
+                <h3>Function Call Comparison</h3>
+                <canvas id="functionComparisonChart"></canvas>
+                <div id="functionComparisonChartLoading" class="chart-loading" style="display: none;">Loading...</div>
+            </div>
+            
+            <!-- New hierarchical function visualization -->
+            <div class="chart-container full-width" style="height: 600px;">
+                <h3>Function Call Hierarchy</h3>
+                <div id="hierarchyToggleContainer" style="margin-bottom: 10px;">
+                    <label for="hierarchyDepth">Hierarchy Depth:</label>
+                    <select id="hierarchyDepth" onchange="updateFunctionHierarchyChart()">
+                        <option value="1">1 level</option>
+                        <option value="2" selected>2 levels</option>
+                        <option value="3">3 levels</option>
+                        <option value="4">All levels</option>
+                    </select>
+                    <label for="minTimePercentage" style="margin-left: 15px;">Min. Time Percentage:</label>
+                    <input type="number" id="minTimePercentage" min="0" max="100" step="0.1" value="1" style="width: 60px;" onchange="updateFunctionHierarchyChart()">%
+                </div>
+                <div id="functionHierarchyTree" style="width:100%; height:600px; overflow:auto; border:1px solid #eee; padding: 10px;"></div>
+                <div id="functionHierarchyChartLoading" class="chart-loading" style="display: none;">Loading...</div>
+            </div>
+        </div>
+        
+        
+    </div>
+    
+    <script>
+        // Global variables to store loaded data
+        let primaryData = null;
+        let comparisonData = null;
+        let comparisonMode = 'sideBySide'; // 'sideBySide' or 'overlay'
+        let charts = {};
+        
+        // Colors for charts
+        const colors = {
+            primary: {
+                simulation: 'rgba(54, 162, 235, 0.7)',
+                rendering: 'rgba(255, 206, 86, 0.7)',
+                videoGeneration: 'rgba(75, 192, 192, 0.7)',
+                other: 'rgba(153, 102, 255, 0.7)'
+            },
+            comparison: {
+                simulation: 'rgba(54, 162, 235, 0.4)',
+                rendering: 'rgba(255, 206, 86, 0.4)',
+                videoGeneration: 'rgba(75, 192, 192, 0.4)',
+                other: 'rgba(153, 102, 255, 0.4)'
+            },
+            functions: [
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)',
+                'rgba(199, 199, 199, 0.7)',
+                'rgba(83, 102, 255, 0.7)',
+                'rgba(255, 99, 255, 0.7)',
+                'rgba(153, 159, 64, 0.7)'
+            ]
+        };
+        
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('fileInput1').addEventListener('change', handleFileInput);
+            document.getElementById('fileInput2').addEventListener('change', handleFileInput);
+            document.getElementById('toggleComparison').addEventListener('click', toggleComparisonMode);
+            document.getElementById('topFunctionsBody').addEventListener('click', handleFunctionRowClick);
+        });
+        
+        function handleFileInput(event) {
+            const fileInput = event.target;
+            const fileInfoId = fileInput.id === 'fileInput1' ? 'fileInfo1' : 'fileInfo2';
+            const fileInfoElement = document.getElementById(fileInfoId);
+            
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                fileInfoElement.innerHTML = `<p>Loading: ${file.name}</p>`;
+                
+                // Show loading indicators
+                document.querySelectorAll('.chart-loading').forEach(el => {
+                    el.style.display = 'flex';
+                });
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (fileInput.id === 'fileInput1') {
+                            primaryData = data;
+                            fileInfoElement.innerHTML = `<p>Loaded: ${file.name}</p>`;
+                        } else {
+                            comparisonData = data;
+                            fileInfoElement.innerHTML = `<p>Loaded: ${file.name}</p>`;
+                            document.getElementById('comparisonToggle').style.display = 'block';
+                        }
+                        
+                        // Update dashboard with a slight delay to allow UI to refresh
+                        setTimeout(() => {
+                            updateDashboard();
+                            // Hide loading indicators
+                            document.querySelectorAll('.chart-loading').forEach(el => {
+                                el.style.display = 'none';
+                            });
+                        }, 100);
+                    } catch (error) {
+                        fileInfoElement.innerHTML = `<p style="color: red;">Error: Could not parse JSON file</p>`;
+                        console.error('Error parsing JSON:', error);
+                        
+                        // Hide loading indicators
+                        document.querySelectorAll('.chart-loading').forEach(el => {
+                            el.style.display = 'none';
+                        });
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+        
+        function toggleComparisonMode() {
+            comparisonMode = comparisonMode === 'sideBySide' ? 'overlay' : 'sideBySide';
+            document.getElementById('comparisonMode').textContent = `Current mode: ${comparisonMode === 'sideBySide' ? 'Side by Side' : 'Overlay'}`;
+            
+            // Show loading indicators
+            document.querySelectorAll('.chart-loading').forEach(el => {
+                el.style.display = 'flex';
+            });
+            
+            // Update with a slight delay
+            setTimeout(() => {
+                updateDashboard();
+                // Hide loading indicators
+                document.querySelectorAll('.chart-loading').forEach(el => {
+                    el.style.display = 'none';
+                });
+            }, 100);
+        }
+        
+        function handleFunctionRowClick(event) {
+            const row = event.target.closest('tr');
+            if (!row) return;
+            
+            // Highlight the selected row
+            document.querySelectorAll('#topFunctionsTable tbody tr').forEach(tr => {
+                tr.classList.remove('highlight');
+            });
+            row.classList.add('highlight');
+            
+            // Get function name from the first cell
+            const functionName = row.cells[0].textContent;
+            showFunctionDetails(functionName);
+        }
+        
+        function showFunctionDetails(functionName) {
+            const detailsElement = document.getElementById('functionDetails');
+            let html = '';
+            
+            if (primaryData && primaryData.stats && primaryData.stats.profilingData) {
+                const primaryFunction = getFunction(primaryData, functionName);
+                if (primaryFunction) {
+                    html += `<h3>${functionName}</h3>`;
+                    html += `<div class="summary">`;
+                    html += `<div class="summary-card">
+                        <h3>Primary Data</h3>
+                        <p>Total time: ${(primaryFunction.totalTimeMs).toFixed(2)} ms</p>
+                        <p>Call count: ${primaryFunction.callCount}</p>
+                        <p>Percentage of total: ${primaryFunction.percentageOfTotal}%</p>
+                        <p>Average time per call: ${primaryFunction.avgTimePerCallMs} ms</p>`;
+                    
+                    // Add parent function information if available
+                    if (primaryFunction.parentName) {
+                        html += `<p>Parent function: ${primaryFunction.parentName}</p>`;
+                    }
+                    
+                    html += `</div>`;
+                    
+                    if (comparisonData && comparisonData.stats && comparisonData.stats.profilingData) {
+                        const comparisonFunction = getFunction(comparisonData, functionName);
+                        if (comparisonFunction) {
+                            const timeDiff = primaryFunction.totalTimeMs - comparisonFunction.totalTimeMs;
+                            const percentChange = ((timeDiff / comparisonFunction.totalTimeMs) * 100).toFixed(2);
+                            const isImprovement = timeDiff < 0;
+                            
+                            html += `<div class="summary-card">
+                                <h3>Comparison Data</h3>
+                                <p>Total time: ${(comparisonFunction.totalTimeMs).toFixed(2)} ms</p>
+                                <p>Call count: ${comparisonFunction.callCount}</p>
+                                <p>Percentage of total: ${comparisonFunction.percentageOfTotal}%</p>
+                                <p>Average time per call: ${comparisonFunction.avgTimePerCallMs} ms</p>`;
+                                
+                            // Add parent function information if available
+                            if (comparisonFunction.parentName) {
+                                html += `<p>Parent function: ${comparisonFunction.parentName}</p>`;
+                            }
+                            
+                            html += `</div>`;
+                            
+                            html += `<div class="summary-card">
+                                <h3>Difference</h3>
+                                <p>Time difference: <span class="${isImprovement ? 'improvement' : 'regression'}">${isImprovement ? '-' : '+'}${Math.abs(timeDiff).toFixed(2)} ms</span></p>
+                                <p>Percentage change: <span class="${isImprovement ? 'improvement' : 'regression'}">${isImprovement ? '-' : '+'}${Math.abs(percentChange)}%</span></p>
+                                <p>Call count difference: ${primaryFunction.callCount - comparisonFunction.callCount}</p>
+                            </div>`;
+                        }
+                    }
+                    html += `</div>`;
+                    
+                    // Show child functions if available
+                    const childFunctions = getChildFunctions(primaryData, functionName);
+                    if (childFunctions.length > 0) {
+                        html += `<h4>Child Functions</h4>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Function Name</th>
+                                        <th>Time (ms)</th>
+                                        <th>% of Parent</th>
+                                        <th>Call Count</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                        
+                        childFunctions.forEach(child => {
+                            const percentOfParent = ((child.totalTimeMs / primaryFunction.totalTimeMs) * 100).toFixed(2);
+                            html += `<tr>
+                                <td>${child.displayName || child.name}</td>
+                                <td>${child.totalTimeMs.toFixed(2)}</td>
+                                <td>${percentOfParent}%</td>
+                                <td>${child.callCount}</td>
+                            </tr>`;
+                        });
+                        
+                        html += `</tbody></table></div>`;
+                    }
+                }
+            }
+            
+            detailsElement.innerHTML = html || 'Select a function from the table above to see details.';
+        }
+        
+        function getFunction(data, functionName) {
+            if (data && data.stats && data.stats.profilingData && data.stats.profilingData.functions) {
+                return data.stats.profilingData.functions[functionName];
+            }
+            return null;
+        }
+        
+        // Helper function to get child functions of a parent function
+        function getChildFunctions(data, parentName) {
+            const childFunctions = [];
+            
+            if (data && data.stats && data.stats.profilingData && data.stats.profilingData.functions) {
+                const functions = data.stats.profilingData.functions;
+                
+                // Check all functions to find those with this parent
+                for (const funcName in functions) {
+                    const func = functions[funcName];
+                    if (func.parentName === parentName) {
+                        childFunctions.push({
+                            name: funcName,
+                            displayName: func.displayName,
+                            totalTimeMs: func.totalTimeMs,
+                            callCount: func.callCount
+                        });
+                    }
+                }
+            }
+            
+            // Sort by total time (descending)
+            return childFunctions.sort((a, b) => b.totalTimeMs - a.totalTimeMs);
+        }
+        
+        function updateDashboard() {
+            if (primaryData) {
+                updateSummary();
+                updatePhaseChart();
+                updateFunctionPercentageChart();
+                updateTopFunctionsTable();
+                updateFunctionComparisonChart();
+                // New charts for hierarchical data
+                updateFunctionHierarchyChart();
+            }
+        }
+        
+        function updateSummary() {
+            const summaryContainer = document.getElementById('summaryContainer');
+            let html = '';
+            
+            if (primaryData) {
+                const primary = primaryData;
+                html += `
+                <div class="summary-card">
+                    <h3>Primary Data</h3>
+                    <p>Total time: ${(primary.totalTimeMs / 1000).toFixed(2)} seconds</p>
+                    <p>Simulation: ${(primary.simulationPhaseMs / 1000).toFixed(2)} seconds (${primary.stats.simulationTimePercentage}%)</p>
+                    <p>Rendering: ${(primary.renderingPhaseMs / 1000).toFixed(2)} seconds (${primary.stats.renderingTimePercentage}%)</p>
+                    <p>Video generation: ${(primary.videoGenerationMs / 1000).toFixed(2)} seconds (${primary.stats.videoGenerationTimePercentage}%)</p>
+                    <p>Total frames: ${primary.totalFrames}</p>
+                </div>`;
+                
+                if (comparisonData) {
+                    const comparison = comparisonData;
+                    html += `
+                    <div class="summary-card">
+                        <h3>Comparison Data</h3>
+                        <p>Total time: ${(comparison.totalTimeMs / 1000).toFixed(2)} seconds</p>
+                        <p>Simulation: ${(comparison.simulationPhaseMs / 1000).toFixed(2)} seconds (${comparison.stats.simulationTimePercentage}%)</p>
+                        <p>Rendering: ${(comparison.renderingPhaseMs / 1000).toFixed(2)} seconds (${comparison.stats.renderingTimePercentage}%)</p>
+                        <p>Video generation: ${(comparison.videoGenerationMs / 1000).toFixed(2)} seconds (${comparison.stats.videoGenerationTimePercentage}%)</p>
+                        <p>Total frames: ${comparison.totalFrames}</p>
+                    </div>`;
+                    
+                    // Calculate improvements
+                    const totalTimeDiff = primary.totalTimeMs - comparison.totalTimeMs;
+                    const totalTimePercentChange = ((totalTimeDiff / comparison.totalTimeMs) * 100).toFixed(2);
+                    const simulationTimeDiff = primary.simulationPhaseMs - comparison.simulationPhaseMs;
+                    const simulationTimePercentChange = ((simulationTimeDiff / comparison.simulationPhaseMs) * 100).toFixed(2);
+                    const renderingTimeDiff = primary.renderingPhaseMs - comparison.renderingPhaseMs;
+                    const renderingTimePercentChange = ((renderingTimeDiff / comparison.renderingPhaseMs) * 100).toFixed(2);
+                    const videoTimeDiff = primary.videoGenerationMs - comparison.videoGenerationMs;
+                    const videoTimePercentChange = ((videoTimeDiff / comparison.videoGenerationMs) * 100).toFixed(2);
+                    
+                    html += `
+                    <div class="summary-card">
+                        <h3>Improvements</h3>
+                        <p>Total time: <span class="${totalTimeDiff < 0 ? 'improvement' : 'regression'}">${totalTimeDiff < 0 ? '-' : '+'}${Math.abs(totalTimeDiff / 1000).toFixed(2)} seconds (${Math.abs(totalTimePercentChange)}%)</span></p>
+                        <p>Simulation: <span class="${simulationTimeDiff < 0 ? 'improvement' : 'regression'}">${simulationTimeDiff < 0 ? '-' : '+'}${Math.abs(simulationTimeDiff / 1000).toFixed(2)} seconds (${Math.abs(simulationTimePercentChange)}%)</span></p>
+                        <p>Rendering: <span class="${renderingTimeDiff < 0 ? 'improvement' : 'regression'}">${renderingTimeDiff < 0 ? '-' : '+'}${Math.abs(renderingTimeDiff / 1000).toFixed(2)} seconds (${Math.abs(renderingTimePercentChange)}%)</span></p>
+                        <p>Video generation: <span class="${videoTimeDiff < 0 ? 'improvement' : 'regression'}">${videoTimeDiff < 0 ? '-' : '+'}${Math.abs(videoTimeDiff / 1000).toFixed(2)} seconds (${Math.abs(videoTimePercentChange)}%)</span></p>
+                    </div>`;
+                }
+            }
+            
+            summaryContainer.innerHTML = html;
+        }
+        
+        function updatePhaseChart() {
+            const canvas = document.getElementById('phaseChart');
+            
+            // Destroy previous chart if it exists
+            if (charts.phaseChart) {
+                charts.phaseChart.destroy();
+            }
+            
+            const ctx = canvas.getContext('2d');
+            
+            if (primaryData) {
+                const primary = primaryData;
+                
+                let datasets = [{
+                    label: 'Primary Data',
+                    data: [
+                        primary.simulationPhaseMs / 1000,
+                        primary.renderingPhaseMs / 1000,
+                        primary.videoGenerationMs / 1000,
+                        (primary.totalTimeMs - primary.simulationPhaseMs - primary.renderingPhaseMs - primary.videoGenerationMs) / 1000
+                    ],
+                    backgroundColor: [
+                        colors.primary.simulation,
+                        colors.primary.rendering,
+                        colors.primary.videoGeneration,
+                        colors.primary.other
+                    ],
+                    borderWidth: 1
+                }];
+                
+                if (comparisonData && comparisonMode === 'sideBySide') {
+                    const comparison = comparisonData;
+                    datasets.push({
+                        label: 'Comparison Data',
+                        data: [
+                            comparison.simulationPhaseMs / 1000,
+                            comparison.renderingPhaseMs / 1000,
+                            comparison.videoGenerationMs / 1000,
+                            (comparison.totalTimeMs - comparison.simulationPhaseMs - comparison.renderingPhaseMs - comparison.videoGenerationMs) / 1000
+                        ],
+                        backgroundColor: [
+                            colors.comparison.simulation,
+                            colors.comparison.rendering,
+                            colors.comparison.videoGeneration,
+                            colors.comparison.other
+                        ],
+                        borderWidth: 1
+                    });
+                }
+                
+                charts.phaseChart = new Chart(ctx, {
+                    type: comparisonData && comparisonMode === 'sideBySide' ? 'bar' : 'pie',
+                    data: {
+                        labels: ['Simulation', 'Rendering', 'Video Generation', 'Other'],
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.raw.toFixed(2);
+                                        return `${label}: ${value} seconds`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        function updateFunctionPercentageChart() {
+            const canvas = document.getElementById('functionPercentageChart');
+            
+            // Destroy previous chart if it exists
+            if (charts.functionPercentageChart) {
+                charts.functionPercentageChart.destroy();
+            }
+            
+            const ctx = canvas.getContext('2d');
+            
+            if (primaryData && primaryData.stats && primaryData.stats.profilingData) {
+                const functions = primaryData.stats.profilingData.functions;
+                
+                // Get top 10 functions by percentage (excluding nested functions)
+                const topFunctions = Object.keys(functions)
+                    .filter(name => !name.includes(' > ')) // Filter out nested functions for this chart
+                    .map(name => ({ name, ...functions[name] }))
+                    .sort((a, b) => parseFloat(b.percentageOfTotal) - parseFloat(a.percentageOfTotal))
+                    .slice(0, 10);
+                
+                charts.functionPercentageChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: topFunctions.map(f => f.name.length > 20 ? f.name.substring(0, 20) + '...' : f.name),
+                        datasets: [{
+                            label: 'Percentage of Total Execution Time',
+                            data: topFunctions.map(f => parseFloat(f.percentageOfTotal)),
+                            backgroundColor: colors.functions,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `${context.raw.toFixed(2)}% of total time`;
+                                    },
+                                    title: function(context) {
+                                        const title = context[0].label;
+                                        // Get the original function name from our data
+                                        const originalName = topFunctions[context[0].dataIndex].name;
+                                        return originalName; // Return full function name in tooltip
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Percentage of Total Execution Time'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // New function to visualize hierarchical function relationship
+        function updateFunctionHierarchyChart() {
+            const hierarchyContainer = document.getElementById('functionHierarchyTree');
+            const loadingIndicator = document.getElementById('functionHierarchyChartLoading');
+            
+            // Show loading indicator
+            loadingIndicator.style.display = 'flex';
+            hierarchyContainer.innerHTML = '';
+            
+            if (!primaryData || !primaryData.stats || !primaryData.stats.profilingData) {
+                hierarchyContainer.innerHTML = '<p>No hierarchical data available</p>';
+                loadingIndicator.style.display = 'none';
+                return;
+            }
+            
+            try {
+                // Get configuration values
+                const maxDepth = parseInt(document.getElementById('hierarchyDepth').value) || 2;
+                const minPercentage = parseFloat(document.getElementById('minTimePercentage').value) || 1;
+                
+                // Build the hierarchical tree from the functions data
+                const tree = buildFunctionHierarchyTree(primaryData);
+                
+                // Render the tree
+                hierarchyContainer.appendChild(renderFunctionTree(tree, maxDepth, minPercentage));
+                
+                // Hide loading indicator
+                loadingIndicator.style.display = 'none';
+            } catch (error) {
+                console.error('Error rendering function hierarchy:', error);
+                hierarchyContainer.innerHTML = `<p>Error rendering hierarchy: ${error.message}</p>`;
+                loadingIndicator.style.display = 'none';
+            }
+        }
+        
+        // Helper function to build hierarchical tree from flat function data
+        function buildFunctionHierarchyTree(data) {
+            const functions = data.stats.profilingData.functions;
+            const totalTime = data.totalTimeMs;
+            
+            // Create a root node
+            const root = {
+                name: 'root',
+                displayName: 'All Functions',
+                totalTimeMs: totalTime,
+                percentageOfTotal: 100,
+                children: []
+            };
+            
+            // First pass: find all top-level functions (those without a parent)
+            const topLevelFunctions = [];
+            const childFunctions = [];
+            
+            for (const funcName in functions) {
+                const func = functions[funcName];
+                if (!func.parentName) {
+                    topLevelFunctions.push({
+                        name: funcName,
+                        displayName: func.displayName || funcName,
+                        totalTimeMs: func.totalTimeMs,
+                        percentageOfTotal: parseFloat(func.percentageOfTotal),
+                        callCount: func.callCount,
+                        children: []
+                    });
+                } else {
+                    childFunctions.push({
+                        name: funcName,
+                        displayName: func.displayName || funcName,
+                        parentName: func.parentName,
+                        totalTimeMs: func.totalTimeMs,
+                        percentageOfTotal: parseFloat(func.percentageOfTotal),
+                        callCount: func.callCount,
+                        children: []
+                    });
+                }
+            }
+            
+            // Sort top-level functions by time
+            topLevelFunctions.sort((a, b) => b.totalTimeMs - a.totalTimeMs);
+            
+            // Add top-level functions to root
+            root.children = topLevelFunctions;
+            
+            // Second pass: recursively add child functions to their parents
+            function addChildrenRecursively(parentNode) {
+                const children = childFunctions.filter(func => func.parentName === parentNode.name);
+                
+                if (children.length > 0) {
+                    // Sort children by time
+                    children.sort((a, b) => b.totalTimeMs - a.totalTimeMs);
+                    parentNode.children = children;
+                    
+                    // Recursively process each child
+                    children.forEach(child => addChildrenRecursively(child));
+                }
+            }
+            
+            // Process each top-level function
+            topLevelFunctions.forEach(func => addChildrenRecursively(func));
+            
+            return root;
+        }
+        
+        // Render the function tree as HTML
+        function renderFunctionTree(node, maxDepth, minPercentage, currentDepth = 0) {
+            // Create the container for this node
+            const container = document.createElement('div');
+            container.className = 'tree-node';
+            
+            // Skip nodes with percentage below minimum threshold
+            if (currentDepth > 0 && node.percentageOfTotal < minPercentage) {
+                return container; // Return empty container
+            }
+            
+            // Create the node content
+            const nodeContent = document.createElement('div');
+            nodeContent.className = 'tree-node-content';
+            
+            // Add indent based on depth
+            nodeContent.style.paddingLeft = `${currentDepth * 20}px`;
+            
+            // Add toggle if this node has children and we're not at max depth
+            if (node.children && node.children.length > 0 && (maxDepth === 4 || currentDepth < maxDepth - 1)) {
+                const toggle = document.createElement('span');
+                toggle.className = 'tree-toggle';
+                toggle.innerHTML = '▼ ';
+                toggle.style.cursor = 'pointer';
+                toggle.onclick = function() {
+                    const childContainer = this.parentNode.nextElementSibling;
+                    if (childContainer.style.display === 'none') {
+                        childContainer.style.display = 'block';
+                        this.innerHTML = '▼ ';
+                    } else {
+                        childContainer.style.display = 'none';
+                        this.innerHTML = '► ';
+                    }
+                };
+                nodeContent.appendChild(toggle);
+            } else {
+                // Add spacing for alignment when there's no toggle
+                const spacer = document.createElement('span');
+                spacer.innerHTML = '&nbsp;&nbsp; ';
+                nodeContent.appendChild(spacer);
+            }
+            
+            // Add function name and timing info
+            const nameSpan = document.createElement('span');
+            
+            // Create a gradient color based on percentage (red for high, green for low)
+            const percentColor = getColorForPercentage(node.percentageOfTotal);
+            
+            if (currentDepth === 0) {
+                // Root node
+                nameSpan.innerHTML = `<strong>${node.displayName}</strong>`;
+            } else {
+                nameSpan.innerHTML = `<span style="color:${percentColor}">${node.displayName}</span> - ${node.totalTimeMs.toFixed(2)}ms (${node.percentageOfTotal.toFixed(2)}%), ${node.callCount} calls`;
+            }
+            nodeContent.appendChild(nameSpan);
+            
+            // Add time bar visualization if not root
+            if (currentDepth > 0) {
+                const barContainer = document.createElement('div');
+                barContainer.className = 'time-bar-container';
+                barContainer.style.marginLeft = '10px';
+                barContainer.style.display = 'inline-block';
+                barContainer.style.width = '100px';
+                barContainer.style.height = '10px';
+                barContainer.style.backgroundColor = '#eee';
+                
+                const bar = document.createElement('div');
+                bar.className = 'time-bar';
+                bar.style.width = `${Math.min(100, node.percentageOfTotal)}%`;
+                bar.style.height = '100%';
+                bar.style.backgroundColor = percentColor;
+                
+                barContainer.appendChild(bar);
+                nodeContent.appendChild(barContainer);
+            }
+            
+            container.appendChild(nodeContent);
+            
+            // Add children if not at max depth and node has children
+            if (node.children && node.children.length > 0 && (maxDepth === 4 || currentDepth < maxDepth)) {
+                const childrenContainer = document.createElement('div');
+                childrenContainer.className = 'tree-children';
+                
+                // Sort children by time
+                node.children.sort((a, b) => b.totalTimeMs - a.totalTimeMs);
+                
+                // Only show children above the minimum percentage threshold
+                const visibleChildren = node.children.filter(child => child.percentageOfTotal >= minPercentage);
+                
+                // Render each child
+                visibleChildren.forEach(child => {
+                    const childNode = renderFunctionTree(child, maxDepth, minPercentage, currentDepth + 1);
+                    childrenContainer.appendChild(childNode);
+                });
+                
+                // If there are filtered children, show a message
+                const filteredCount = node.children.length - visibleChildren.length;
+                if (filteredCount > 0) {
+                    const filteredMsg = document.createElement('div');
+                    filteredMsg.className = 'tree-node';
+                    filteredMsg.style.paddingLeft = `${(currentDepth + 1) * 20 + 10}px`;
+                    filteredMsg.style.color = '#999';
+                    filteredMsg.innerHTML = `(${filteredCount} more functions below ${minPercentage}% threshold)`;
+                    childrenContainer.appendChild(filteredMsg);
+                }
+                
+                container.appendChild(childrenContainer);
+            }
+            
+            return container;
+        }
+        
+        // Helper function to get a color based on percentage value
+        function getColorForPercentage(percentage) {
+            // Define color range: green (low) to red (high)
+            const r = Math.min(255, Math.floor((percentage / 25) * 255));
+            const g = Math.min(255, Math.floor(((25 - Math.min(percentage, 25)) / 25) * 255));
+            return `rgb(${r}, ${g}, 0)`;
+        }
+        
+        function updateTopFunctionsTable() {
+            const tableBody = document.getElementById('topFunctionsBody');
+            const compareColumn = document.getElementById('compareColumn');
+            
+            // Clear table
+            tableBody.innerHTML = '';
+            
+            if (primaryData && primaryData.stats && primaryData.stats.profilingData) {
+                const primaryFunctions = primaryData.stats.profilingData.functions;
+                const comparisonFunctions = comparisonData && 
+                                          comparisonData.stats && 
+                                          comparisonData.stats.profilingData ? 
+                                          comparisonData.stats.profilingData.functions : null;
+                
+                // Option to toggle between showing all functions or just root functions
+                const showAllFunctions = false; // Set to true to show all functions including nested ones
+                
+                // Get functions to display
+                let functionsToDisplay = Object.keys(primaryFunctions)
+                    .map(name => ({ name, ...primaryFunctions[name] }));
+                
+                // Filter out nested functions if desired
+                if (!showAllFunctions) {
+                    functionsToDisplay = functionsToDisplay.filter(func => !func.name.includes(' > '));
+                }
+                
+                // Sort by total time and limit to top 20
+                functionsToDisplay = functionsToDisplay
+                    .sort((a, b) => a.totalTimeMs < b.totalTimeMs ? 1 : -1)
+                    .slice(0, 20);
+                
+                // Show comparison column if comparison data is available
+                if (comparisonFunctions) {
+                    compareColumn.style.display = '';
+                } else {
+                    compareColumn.style.display = 'none';
+                }
+                
+                // Add rows
+                functionsToDisplay.forEach(func => {
+                    const row = document.createElement('tr');
+                    
+                    // Function name
+                    const nameCell = document.createElement('td');
+                    nameCell.textContent = func.name;
+                    nameCell.className = 'function-name-cell';
+                    nameCell.title = func.name; // Show full name on hover
+                    row.appendChild(nameCell);
+                    
+                    // Total time
+                    const timeCell = document.createElement('td');
+                    timeCell.textContent = func.totalTimeMs.toFixed(2);
+                    row.appendChild(timeCell);
+                    
+                    // Percentage
+                    const percentCell = document.createElement('td');
+                    percentCell.textContent = func.percentageOfTotal + '%';
+                    row.appendChild(percentCell);
+                    
+                    // Call count
+                    const callCountCell = document.createElement('td');
+                    callCountCell.textContent = func.callCount;
+                    row.appendChild(callCountCell);
+                    
+                    // Average time per call
+                    const avgTimeCell = document.createElement('td');
+                    avgTimeCell.textContent = func.avgTimePerCallMs;
+                    row.appendChild(avgTimeCell);
+                    
+                    // Comparison (if available)
+                    if (comparisonFunctions) {
+                        const comparisonCell = document.createElement('td');
+                        const comparisonFunc = comparisonFunctions[func.name];
+                        
+                        if (comparisonFunc) {
+                            const timeDiff = func.totalTimeMs - comparisonFunc.totalTimeMs;
+                            const percentChange = ((timeDiff / comparisonFunc.totalTimeMs) * 100).toFixed(2);
+                            const isImprovement = timeDiff < 0;
+                            
+                            comparisonCell.innerHTML = `<span class="${isImprovement ? 'improvement' : 'regression'}">${isImprovement ? '-' : '+'}${Math.abs(timeDiff).toFixed(2)}ms (${Math.abs(percentChange)}%)</span>`;
+                        } else {
+                            comparisonCell.textContent = 'N/A';
+                        }
+                        
+                        row.appendChild(comparisonCell);
+                    }
+                    
+                    tableBody.appendChild(row);
+                });
+            }
+        }
+        
+        function updateFunctionComparisonChart() {
+            const canvas = document.getElementById('functionComparisonChart');
+            
+            // Destroy previous chart if it exists
+            if (charts.functionComparisonChart) {
+                charts.functionComparisonChart.destroy();
+            }
+            
+            const ctx = canvas.getContext('2d');
+            
+            if (primaryData && primaryData.stats && primaryData.stats.profilingData) {
+                const primaryFunctions = primaryData.stats.profilingData.functions;
+                const comparisonFunctions = comparisonData && 
+                                          comparisonData.stats && 
+                                          comparisonData.stats.profilingData ? 
+                                          comparisonData.stats.profilingData.functions : null;
+                
+                // Get top 10 functions by time in primary data (excluding nested functions)
+                const topFunctions = Object.keys(primaryFunctions)
+                    .filter(name => !name.includes(' > ')) // Filter out nested functions
+                    .map(name => ({ name, ...primaryFunctions[name] }))
+                    .sort((a, b) => a.totalTimeMs < b.totalTimeMs ? 1 : -1)
+                    .slice(0, 10);
+                
+                // Store original names for tooltips
+                const originalNames = topFunctions.map(f => f.name);
+                
+                // Truncate names for display
+                const labels = topFunctions.map(f => f.displayName || (f.name.length > 15 ? f.name.substring(0, 15) + '...' : f.name));
+                
+                const datasets = [{
+                    label: 'Primary Data',
+                    data: topFunctions.map(f => f.totalTimeMs),
+                    backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                    borderWidth: 1
+                }];
+                
+                if (comparisonFunctions) {
+                    const comparisonData = topFunctions.map(f => {
+                        const comparisonFunc = comparisonFunctions[f.name];
+                        return comparisonFunc ? comparisonFunc.totalTimeMs : 0;
+                    });
+                    
+                    datasets.push({
+                        label: 'Comparison Data',
+                        data: comparisonData,
+                        backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                        borderWidth: 1
+                    });
+                }
+                
+                charts.functionComparisonChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Execution Time (ms)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.raw.toFixed(2);
+                                        return `${label}: ${value} ms`;
+                                    },
+                                    title: function(context) {
+                                        const index = context[0].dataIndex;
+                                        return originalNames[index]; // Show full function name in tooltip
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html> 

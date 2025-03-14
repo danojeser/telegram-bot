@@ -63,7 +63,8 @@ const listaComandos = [
     { command: "messagestats", description: "Gráfica de mensajes por mes del último año"},
     { command: "commandstats", description: "Gráfica de comandos por mes del último año"},
     { command: "totalactivity", description: "Gráfica de actividad total de mensajes desde el inicio"},
-    { command: "apuesta", description: "Apuesta"}
+    { command: "apuesta", description: "Apuesta"},
+    { command: "apuesta2", description: "Apuesta2"}
 ];
 
 

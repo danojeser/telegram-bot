@@ -68,9 +68,13 @@ apuesta.command("apuesta", async (ctx) => {
   const chatId = ctx.chat.id;
   const userId = ctx.from.id;
   const videoPath = path.join("temp", `apuesta_${Date.now()}.mp4`);
-  const framesDir = path.join("temp", `frames_${Date.now()}`);
   const resultImagePath = path.join("temp", `result_${Date.now()}.png`);
   const ffmpegLogPath = "ultimo-log-ffmpeg.log";
+  
+  // Create temp directory if it doesn't exist
+  if (!fs.existsSync('temp')) {
+    fs.mkdirSync('temp', { recursive: true });
+  }
   
   // Add timing data file
   const timingId = Date.now();
@@ -78,23 +82,12 @@ apuesta.command("apuesta", async (ctx) => {
   const timingData = {
     startTime: new Date().toISOString(),
     totalTimeMs: 0,
-    frameTimesMs: [],
-    simulationTimesMs: [], // Add separate array for simulation times
-    saveTimesMs: [], // Add separate array for file saving times
+    renderTimesMs: [], // Just track render times
     totalFrames: 0,
     videoGenerationTimeMs: 0,
     userId: userId,
     chatId: chatId
   };
-  
-  // Create directories if they don't exist
-  if (!fs.existsSync(framesDir)) {
-    fs.mkdirSync(framesDir, { recursive: true });
-  }
-  
-  if (!fs.existsSync('temp')) {
-    fs.mkdirSync('temp', { recursive: true });
-  }
   
   const WIDTH = 720;
   const HEIGHT = 1280;
@@ -104,7 +97,8 @@ apuesta.command("apuesta", async (ctx) => {
   const RESULT_DISPLAY_DURATION = 1; // seconds to display the result screen
   const TOTAL_DURATION = GAME_DURATION + COUNTDOWN_DURATION + RESULT_DISPLAY_DURATION;
   const TOTAL_FRAMES = FPS * TOTAL_DURATION;
-  const SIMULATION_SPEED = 1.5; // Speed multiplier for game simulation
+  const SIMULATION_SPEED = 2; // Speed multiplier for game simulation
+  const TEAM_ELEMENTS = 5; // Number of elements per team
   
   // Start timing the entire process
   const totalStartTime = performance.now();
@@ -115,8 +109,7 @@ apuesta.command("apuesta", async (ctx) => {
     const imagesLoaded = await loadGameImages();
     
     // Initialize game parameters
-    const teamElements = 10;
-    const gameState = initializeGameState(WIDTH, HEIGHT, teamElements, GAME_DURATION);
+    const gameState = initializeGameState(WIDTH, HEIGHT, TEAM_ELEMENTS, GAME_DURATION);
     gameState.countdownFrames = COUNTDOWN_DURATION * FPS; // Total countdown frames
     gameState.countdown = gameState.countdownFrames; // Current countdown frames remaining
     gameState.initialCountdownFrames = gameState.countdownFrames; // Store initial value for time calculations
@@ -124,28 +117,112 @@ apuesta.command("apuesta", async (ctx) => {
     // Store the total number of frames for timing data
     timingData.totalFrames = TOTAL_FRAMES;
     
-    // Use a Promise.all approach to generate frames in batches for better performance
-    const batchSize = 10;
-    const batches = Math.ceil(TOTAL_FRAMES / batchSize);
+    // Create a log file stream for FFmpeg
+    const logStream = fs.createWriteStream(ffmpegLogPath, { flags: 'a' });
+    logStream.write(`\n--- FFmpeg log for ${videoPath} (${new Date().toISOString()}) ---\n`);
     
-    for (let batch = 0; batch < batches; batch++) {
-      const startFrame = batch * batchSize;
-      const endFrame = Math.min(startFrame + batchSize, TOTAL_FRAMES);
-      
-      const batchResults = await Promise.all(
-        Array.from({ length: endFrame - startFrame }, (_, i) => {
-          const frameIndex = startFrame + i;
-          return generateFrame(frameIndex, framesDir, WIDTH, HEIGHT, FPS, TOTAL_FRAMES, gameState, SIMULATION_SPEED);
-        })
-      );
-      
-      // Collect timing data from each frame generation
-      batchResults.forEach(result => {
-        timingData.frameTimesMs.push(result.totalTimeMs);
-        timingData.simulationTimesMs.push(result.simulationTimeMs);
-        timingData.saveTimesMs.push(result.saveTimeMs);
+    // Set up FFmpeg process to receive frames directly via stdin pipe
+    const ffmpegProcess = spawn('ffmpeg', [
+      '-y', // Overwrite output files without asking
+      '-f', 'image2pipe', // Specify that we're piping in image data
+      '-framerate', FPS.toString(), // Input framerate
+      '-i', '-', // Input from stdin
+      '-c:v', 'libx264', // Use H.264 codec
+      '-pix_fmt', 'yuv420p', // Standard pixel format
+      '-preset', 'fast', // Encoding preset (fast encoding)
+      '-crf', '22', // Quality level (lower is better quality, higher is smaller file)
+      videoPath // Output file
+    ]);
+    
+    // Pipe FFmpeg stderr to our log file
+    ffmpegProcess.stderr.on('data', (data) => {
+      logStream.write(data);
+    });
+    
+    // Handle potential errors
+    ffmpegProcess.on('error', (err) => {
+      console.error('FFmpeg process error:', err);
+      logStream.write(`\nFFmpeg process error: ${err.message}\n`);
+      logStream.end();
+    });
+    
+    // Start timing video generation
+    const videoStartTime = performance.now();
+
+    // Create canvas for this frame
+    const canvas = createCanvas(WIDTH, HEIGHT);
+    const context = canvas.getContext('2d');
+    
+    // Process frames sequentially to maintain order
+    for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
+      // Time frame rendering
+      const renderStartTime = performance.now();
+
+      // Call the rendering function
+      const renderer = myVideo();
+      renderer({ 
+        canvas, 
+        context, 
+        width: WIDTH, 
+        height: HEIGHT,
+        frameIndex,
+        fps: FPS,
+        gameState,
+        simulationSpeed: SIMULATION_SPEED
       });
+      
+      // Measure render time only (not file saving)
+      const renderTimeMs = performance.now() - renderStartTime;
+      timingData.renderTimesMs.push(renderTimeMs);
+      
+      // Convert canvas to PNG buffer and pipe directly to FFmpeg
+      const pngStream = canvas.createPNGStream();
+      
+      // Write frame to FFmpeg input
+      await new Promise((resolve, reject) => {
+        pngStream.on('data', (chunk) => {
+          // Check if we can still write to the FFmpeg process
+          if (ffmpegProcess.stdin.writable) {
+            const canContinue = ffmpegProcess.stdin.write(chunk);
+            if (!canContinue) {
+              // If the buffer is full, wait for drain event before continuing
+              ffmpegProcess.stdin.once('drain', resolve);
+            } else {
+              process.nextTick(resolve);
+            }
+          } else {
+            reject(new Error('FFmpeg stdin is not writable'));
+          }
+        });
+        pngStream.on('end', resolve);
+        pngStream.on('error', reject);
+      });
+      
+      // Log progress periodically
+      if (frameIndex % 30 === 0) {
+        console.log(`Processed frame ${frameIndex}/${TOTAL_FRAMES} (${Math.round(frameIndex/TOTAL_FRAMES*100)}%)`);
+      }
     }
+    
+    // Close the FFmpeg input stream to signal we're done sending frames
+    ffmpegProcess.stdin.end();
+    
+    // Wait for FFmpeg to finish processing
+    await new Promise((resolve, reject) => {
+      ffmpegProcess.on('close', (code) => {
+        logStream.write(`\nFFmpeg process exited with code ${code}\n`);
+        logStream.end();
+        
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}`));
+        }
+      });
+    });
+    
+    // Calculate video generation time
+    timingData.videoGenerationTimeMs = performance.now() - videoStartTime;
     
     // Generate results image separately
     const resultCanvas = createCanvas(WIDTH, HEIGHT);
@@ -162,15 +239,6 @@ apuesta.command("apuesta", async (ctx) => {
       resultOut.on('error', reject);
     });
     
-    // Start timing video generation
-    const videoStartTime = performance.now();
-    
-    // Use ffmpeg to combine frames into video
-    await generateVideoWithFFmpeg(framesDir, videoPath, FPS, ffmpegLogPath);
-    
-    // Calculate video generation time
-    timingData.videoGenerationTimeMs = performance.now() - videoStartTime;
-    
     // Send the video and results image
     await ctx.replyWithVideo(new InputFile(videoPath));
     await ctx.replyWithPhoto(new InputFile(resultImagePath), {
@@ -181,28 +249,15 @@ apuesta.command("apuesta", async (ctx) => {
     timingData.totalTimeMs = performance.now() - totalStartTime;
     
     // Add some statistics
-    const frameTimesMs = timingData.frameTimesMs;
-    const simulationTimesMs = timingData.simulationTimesMs;
-    const saveTimesMs = timingData.saveTimesMs;
+    const renderTimesMs = timingData.renderTimesMs;
     
     timingData.stats = {
-      // Total frame time stats
-      minFrameTimeMs: Math.min(...frameTimesMs),
-      maxFrameTimeMs: Math.max(...frameTimesMs),
-      avgFrameTimeMs: frameTimesMs.reduce((a, b) => a + b, 0) / frameTimesMs.length,
-      medianFrameTimeMs: [...frameTimesMs].sort((a, b) => a - b)[Math.floor(frameTimesMs.length / 2)],
-      
-      // Simulation time stats
-      minSimulationTimeMs: Math.min(...simulationTimesMs),
-      maxSimulationTimeMs: Math.max(...simulationTimesMs),
-      avgSimulationTimeMs: simulationTimesMs.reduce((a, b) => a + b, 0) / simulationTimesMs.length,
-      medianSimulationTimeMs: [...simulationTimesMs].sort((a, b) => a - b)[Math.floor(simulationTimesMs.length / 2)],
-      
-      // Save time stats
-      minSaveTimeMs: Math.min(...saveTimesMs),
-      maxSaveTimeMs: Math.max(...saveTimesMs),
-      avgSaveTimeMs: saveTimesMs.reduce((a, b) => a + b, 0) / saveTimesMs.length,
-      medianSaveTimeMs: [...saveTimesMs].sort((a, b) => a - b)[Math.floor(saveTimesMs.length / 2)]
+      // Render time stats
+      minRenderTimeMs: Math.min(...renderTimesMs),
+      maxRenderTimeMs: Math.max(...renderTimesMs),
+      avgRenderTimeMs: renderTimesMs.reduce((a, b) => a + b, 0) / renderTimesMs.length,
+      medianRenderTimeMs: [...renderTimesMs].sort((a, b) => a - b)[Math.floor(renderTimesMs.length / 2)],
+      totalVideoGenerationTimeMs: timingData.videoGenerationTimeMs
     };
     
     // Save the timing data to a file
@@ -213,10 +268,6 @@ apuesta.command("apuesta", async (ctx) => {
     await ctx.reply(`Simulación completada en ${(timingData.totalTimeMs/1000).toFixed(2)} segundos. Datos de rendimiento guardados en ${timingDataPath}`);
     
     // Clean up
-    fs.rm(framesDir, { recursive: true, force: true }, (err) => {
-      if (err) console.error("Error removing frame directory:", err);
-    });
-    
     fs.unlink(videoPath, (err) => {
       if (err) console.error("Error deleting video file:", err);
     });
@@ -235,101 +286,6 @@ apuesta.command("apuesta", async (ctx) => {
     fs.writeFileSync(timingDataPath, JSON.stringify(timingData, null, 2));
   }
 });
-
-async function generateFrame(frameIndex, framesDir, width, height, fps, totalFrames, gameState, simulationSpeed) {
-  // Start timing the entire frame generation
-  const frameStartTime = performance.now();
-  
-  // Simulation part
-  const simulationStartTime = performance.now();
-  
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext('2d');
-  const playhead = frameIndex / totalFrames;
-  
-  // Call the rendering function
-  const renderer = myVideo();
-  renderer({ 
-    canvas, 
-    context, 
-    width, 
-    height, 
-    playhead,
-    frameIndex,
-    fps,
-    gameState,
-    simulationSpeed
-  });
-  
-  // Calculate simulation time
-  const simulationTimeMs = performance.now() - simulationStartTime;
-  
-  // File saving part
-  const saveStartTime = performance.now();
-  
-  // Save the frame
-  const framePath = path.join(framesDir, `frame_${frameIndex.toString().padStart(6, '0')}.png`);
-  const out = fs.createWriteStream(framePath);
-  const stream = canvas.createPNGStream();
-  stream.pipe(out);
-  
-  return new Promise((resolve, reject) => {
-    out.on('finish', () => {
-      // Calculate file save time
-      const saveTimeMs = performance.now() - saveStartTime;
-      // Calculate total time
-      const totalTimeMs = performance.now() - frameStartTime;
-      
-      resolve({ 
-        frameIndex,
-        simulationTimeMs,
-        saveTimeMs,
-        totalTimeMs
-      });
-    });
-    out.on('error', reject);
-  });
-}
-
-async function generateVideoWithFFmpeg(framesDir, outputPath, fps, logPath) {
-  return new Promise((resolve, reject) => {
-    // Create a log file stream
-    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-    logStream.write(`\n--- FFmpeg log for ${outputPath} (${new Date().toISOString()}) ---\n`);
-    
-    const ffmpeg = spawn('ffmpeg', [
-      '-framerate', fps.toString(),
-      '-i', path.join(framesDir, 'frame_%06d.png'),
-      '-c:v', 'libx264',
-      '-pix_fmt', 'yuv420p',
-      '-preset', 'fast',
-      '-crf', '22',
-      outputPath
-    ]);
-    
-    ffmpeg.stderr.on('data', data => {
-      // Write to log file instead of console
-      logStream.write(data);
-    });
-    
-    ffmpeg.on('close', code => {
-      logStream.write(`\nFFmpeg process exited with code ${code}\n`);
-      logStream.end();
-      
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
-      }
-    });
-    
-    ffmpeg.on('error', err => {
-      logStream.write(`\nFFmpeg process error: ${err.message}\n`);
-      logStream.end();
-      reject(err);
-    });
-  });
-}
 
 function initializeGameState(width, height, teamElements, gameDuration) {
   // Initialize game state
@@ -576,7 +532,7 @@ class Entity {
 
 function myVideo() {
   // provide a function to draw video frames
-  return function ({ canvas, context, width, height, playhead, frameIndex, fps, gameState, simulationSpeed }) {
+  return function ({ canvas, context, width, height, frameIndex, fps, gameState, simulationSpeed }) {
     const deltaTime = 1 / fps;
     
     // Handle countdown phase
