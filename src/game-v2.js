@@ -312,12 +312,17 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
 
             // Get raw pixel data from canvas instead of using PNG conversion
             profiler.start("getRawPixelData");
+            profiler.start("getImageData");
             const imageData = context.getImageData(0, 0, WIDTH, HEIGHT);
+            profiler.end("getImageData");
 
             // Convert RGBA to RGB format since FFmpeg expects RGB24 or YUV420P
             // This avoids PNG compression/decompression overhead
+            profiler.start("rgbData");
             const rgbData = new Uint8Array(WIDTH * HEIGHT * 3); // 3 bytes per pixel (RGB)
+            profiler.end("rgbData");
 
+            profiler.start("bucleRgbData");
             // Extract RGB values from RGBA, skipping alpha channel
             for (let i = 0, j = 0; i < imageData.data.length; i += 4, j += 3) {
                 rgbData[j] = imageData.data[i];     // R
@@ -325,6 +330,7 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
                 rgbData[j + 2] = imageData.data[i + 2]; // B
                 // Skip alpha channel (imageData.data[i+3])
             }
+            profiler.end("bucleRgbData");
             profiler.end("getRawPixelData");
 
             // Write frame to FFmpeg directly using raw pixel format
