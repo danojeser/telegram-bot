@@ -498,28 +498,9 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         fs.writeFileSync(timingDataPath, JSON.stringify(timingData, null, 2));
         console.log(`Timing data saved to ${timingDataPath}`);
 
-        // Prepare a summary of function timings for display
-        const topFunctions = Object.entries(profilingReport.functions)
-            .sort((a, b) => parseFloat(b[1].percentageOfTotal) - parseFloat(a[1].percentageOfTotal))
-            .slice(0, 10) // Top 10 functions
-            .filter(([name]) => !name.includes(' > ')); // Only show root functions in summary
-
-        let functionTimingSummary = topFunctions.map(([funcName, data]) =>
-            `- ${funcName}: ${(data.totalTimeMs / 1000).toFixed(2)}s (${data.percentageOfTotal}%, llamadas: ${data.callCount})`
-        ).join('\n');
 
         // Let the user know about the timing data with detailed breakdown
-        await ctx.reply(`Generación optimizada completada en ${(timingData.totalTimeMs / 1000).toFixed(2)} segundos.
-            - Fase de simulación: ${(timingData.simulationPhaseMs / 1000).toFixed(2)}s (${timingData.stats.simulationTimePercentage}%)
-            - Fase de renderizado: ${(timingData.renderingPhaseMs / 1000).toFixed(2)}s (${timingData.stats.renderingTimePercentage}%)
-            - Generación de video: ${(timingData.videoGenerationMs / 1000).toFixed(2)}s (${timingData.stats.videoGenerationTimePercentage}%)
-            
-            TOP 10 FUNCIONES POR TIEMPO DE EJECUCIÓN:
-            ${functionTimingSummary}
-            
-            Reporte completo guardado en:
-            - Datos de tiempo y perfil: ${timingDataPath}`
-        );
+        await ctx.reply(`Generación optimizada completada en ${(timingData.totalTimeMs / 1000).toFixed(2)} segundos. Reporte completo guardado en: ${timingDataPath}`);
 
         // Clean up
         fs.unlink(videoPath, (err) => {
