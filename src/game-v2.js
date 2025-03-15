@@ -29,6 +29,8 @@ const TEAM_COLORS = {
         stroke: "#e05555",
     },
 };
+const WIDTH = 720;
+const HEIGHT = 1280;
 
 const RADIUS_SIZE = 21.6;
 
@@ -175,8 +177,7 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         chatId: chatId
     };
 
-    const WIDTH = 720;
-    const HEIGHT = 1280;
+
     const FPS = 30;
     const GAME_DURATION = 10; // The actual game duration (in seconds)
     const COUNTDOWN_DURATION = 3; // seconds (3, 2, 1)
@@ -292,7 +293,7 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         // Create canvas for rendering frames
         profiler.start("canvas");
         const canvas = createCanvas(WIDTH, HEIGHT);
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', { alpha: false });
         profiler.end("canvas");
 
 
@@ -300,11 +301,6 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         profiler.start("rendering");
         // Render each frame from the serialized states
         for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
-            // Time for rendering the frame
-            profiler.start("clearCanvas");
-            context.clearRect(0, 0, WIDTH, HEIGHT);
-            profiler.end("clearCanvas");
-
             // Render this frame using the serialized state
             profiler.start("renderFrame");
             renderFrame(context, WIDTH, HEIGHT, FPS, frameStates[frameIndex]);
@@ -457,7 +453,7 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
         // Generate results image separately (using the final game state)
         profiler.start("generateResultImage");
         const resultCanvas = createCanvas(WIDTH, HEIGHT);
-        const resultContext = resultCanvas.getContext('2d');
+        const resultContext = resultCanvas.getContext('2d', { alpha: false });
         drawResultsScreen(resultContext, frameStates[frameStates.length - 1], WIDTH, HEIGHT);
 
         // Save results image
@@ -643,7 +639,7 @@ function renderFrame(context, width, height, fps, serializedState) {
     profiler.start("background");
     // Draw background
     context.fillStyle = '#e0e0e0';
-    context.fillRect(0, 0, width, height);
+    context.fillRect(0, 0, WIDTH, HEIGHT);
     profiler.end("background");
 
     if (serializedState.countdown > 0) {
@@ -715,13 +711,17 @@ function drawEntity(ctx, entityData) {
     // Draw the pre-rendered sprite if available
     if (spriteCache[spriteKey]) {
         profiler.start("drawPreRendered");
+        profiler.start("getSprite");
         const sprite = spriteCache[spriteKey];
+        profiler.end("getSprite");
         // Draw centered on the entity position
+        profiler.start("drawImage");
         ctx.drawImage(
             sprite,
             x - sprite.width / 2,
             y - sprite.height / 2
         );
+        profiler.end("drawImage");
         profiler.end("drawPreRendered");
     } else {
         // TODO: Añadir un profiler
