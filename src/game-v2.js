@@ -56,10 +56,10 @@ async function loadGameImages() {
             [TEAM_TYPES.ROCK]: path.join(resourcesPath, 'rock.png'),
             [TEAM_TYPES.PAPER]: path.join(resourcesPath, 'paper.png'),
             [TEAM_TYPES.SCISSORS]: path.join(resourcesPath, 'scissors.png'),
-            'countdown_3': path.join(resourcesPath, 'countdown_3.png'),
-            'countdown_2': path.join(resourcesPath, 'countdown_2.png'),
-            'countdown_1': path.join(resourcesPath, 'countdown_1.png'),
-            'countdown_go': path.join(resourcesPath, 'countdown_go.png'),
+            'countdown_3': path.join(resourcesPath, 'screen_countdown_3.png'),
+            'countdown_2': path.join(resourcesPath, 'screen_countdown_2.png'),
+            'countdown_1': path.join(resourcesPath, 'screen_countdown_1.png'),
+            'countdown_go': path.join(resourcesPath, 'screen_countdown_go.png'),
         };
 
         // Create the resources directory if it doesn't exist
@@ -78,14 +78,11 @@ async function loadGameImages() {
         return false;
     }
 }
-// TODO: Es posible que no tenga que precargar las imagenes cada vez, ya que son variables generales/globales del archivo, y el archivo se carga una vez se ejecuta el npm start
-// Add a new function to pre-render entity sprites
-async function preRenderEntitySprites() {
-    // Cargar las imagenes antes de convertilas en canvas
-    profiler.start("loadGameImages");
-    await loadGameImages();
-    profiler.end("loadGameImages");
 
+// Add a new function to pre-render entity sprites
+async function preRenderResources() {
+    // Cargar las imagenes antes de convertilas en canvas
+    await loadGameImages();
 
     // Pre-render sprites for each entity type and size
     for (const type of [TEAM_TYPES.ROCK, TEAM_TYPES.PAPER, TEAM_TYPES.SCISSORS]) {
@@ -146,8 +143,23 @@ async function preRenderEntitySprites() {
         spriteCache[effectKey] = effectCanvas;
     }
 
+    for (const index of [1, 2, 3, 'go']) {
+        const screenKey = `countdown_${index}`;
+        const img = imageCache[screenKey];
+
+        const screenCanvas = createCanvas(WIDTH, HEIGHT)
+        const screenCtx = screenCanvas.getContext('2d', { alpha: false });
+
+        screenCtx.drawImage(img, 0, 0);
+
+        spriteCache[screenKey] = screenCanvas;
+    }
+
     console.log(`Pre-rendered ${Object.keys(spriteCache).length} sprites`);
 }
+
+// Prerenderizar las imagenes a usar para mejorar la generacion del video
+await preRenderResources();
 
 /**
  * This new version of the command separates the simulation from rendering
@@ -202,11 +214,6 @@ apuesta2.command("apuesta2", async (ctx) => {
         // PHASE 0: Initialization phase (loading assets, setup)
         profiler.start("initialization");
 
-        // Load game images before starting
-        profiler.start("preRenderEntitySprites");
-        await preRenderEntitySprites();
-        profiler.end("preRenderEntitySprites");
-
         // Initialize game parameters
         profiler.start("initializeGameState");
         const gameState = initializeGameState(WIDTH, HEIGHT, TEAM_ELEMENTS, GAME_DURATION);
@@ -235,7 +242,6 @@ apuesta2.command("apuesta2", async (ctx) => {
             profiler.end("processFrameSimulation");
 
             // Store a serialized copy of the current state
-            // TODO: Este profiler es medio irrisorio, utilizarlo de ejemplo de jerarquia
             profiler.start("serializeGameState");
             const serializedState = serializeGameState(gameState);
             frameStates.push(serializedState);
@@ -626,7 +632,7 @@ function renderFrame(context, width, height, fps, serializedState) {
     if (serializedState.countdown > 0) {
         // Draw countdown screen
         profiler.start("drawCountdownScreen");
-        drawCountdownScreenFromSerialized(context, serializedState, width, height, fps);
+        context.drawImage(drawCountdownScreen(serializedState, fps), 0, 0)
         profiler.end("drawCountdownScreen");
     } else if (serializedState.gameOver) {
         // Draw game over screen
@@ -771,46 +777,22 @@ function drawEntity(ctx, entityData) {
 /**
  * Draw countdown screen using serialized entity data
  */
-function drawCountdownScreenFromSerialized(ctx, serializedState, width, height, fps) {
-    // Clear the canvas
-    ctx.clearRect(0, 0, width, height);
-
-    // Draw background
-    ctx.fillStyle = '#e0e0e0';
-    ctx.fillRect(0, 0, width, height);
-
-    // Draw the countdown number
+function drawCountdownScreen(serializedState, fps) {
+    // Draw the countdown screen
     const countdownSeconds = Math.ceil(serializedState.countdown / fps);
     let countdownImage;
 
-    // TODO: usar lso sprites, aunque a lo mejor no hacer falta con el nuevo aproach
-    // El nuevo es guardar la imagen de contador por completo y luego utilizarla
     if (countdownSeconds === 3) {
-        countdownImage = imageCache['countdown_3'];
+        countdownImage = spriteCache['countdown_3'];
     } else if (countdownSeconds === 2) {
-        countdownImage = imageCache['countdown_2'];
+        countdownImage = spriteCache['countdown_2'];
     } else if (countdownSeconds === 1) {
-        countdownImage = imageCache['countdown_1'];
+        countdownImage = spriteCache['countdown_1'];
     } else {
-        countdownImage = imageCache['countdown_go'];
+        countdownImage = spriteCache['countdown_go'];
     }
 
-    // Draw the countdown image or fallback to text
-    if (countdownImage) {
-        const imgSize = Math.min(width, height) * 0.3;
-        ctx.drawImage(countdownImage, (width - imgSize) / 2, (height - imgSize) / 2, imgSize, imgSize);
-    } else {
-        // Fallback to text
-        ctx.fillStyle = '#333333';
-        ctx.font = 'bold 96px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(
-            countdownSeconds > 0 ? countdownSeconds.toString() : '¡YA!',
-            width / 2,
-            height / 2
-        );
-    }
+    return countdownImage;
 }
 
 function initializeGameState(width, height, teamElements, gameDuration) {
@@ -1021,10 +1003,10 @@ function drawResultsScreen(state, width, height) {
     ctx.fillText(resultText, width / 2, height / 3);
 
     // Draw winner image
-    if (state.winner !== "tie" && imageCache[state.winner]) {
+    if (state.winner !== "tie" && spriteCache[`${state.winner}_${RADIUS_SIZE}`]) {
         const imgSize = width * 0.2;
         ctx.drawImage(
-            imageCache[state.winner],
+            spriteCache[`${state.winner}_${RADIUS_SIZE}`],
             (width - imgSize) / 2,
             height / 3 + 20,
             imgSize,
