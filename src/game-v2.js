@@ -7,6 +7,7 @@ import {createCanvas, loadImage} from 'canvas';
 import {spawn} from 'child_process';
 import {performance} from 'perf_hooks';
 import {Profiler} from './utils/profiler.js';
+import {Entity} from './utils/entity.js';
 
 // Global game variables
 const TEAM_TYPES = {
@@ -38,6 +39,9 @@ const RADIUS_SIZE = 21.6;
 const imageCache = {};
 // Cache for pre-rendered entity sprites
 const spriteCache = {};
+
+// Cache for rendered result screen
+let cachedResultScreen = null;
 
 
 // Create a global profiler instance
@@ -74,7 +78,7 @@ async function loadGameImages() {
         return false;
     }
 }
-
+// TODO: Es posible que no tenga que precargar las imagenes cada vez, ya que son variables generales/globales del archivo, y el archivo se carga una vez se ejecuta el npm start
 // Add a new function to pre-render entity sprites
 async function preRenderEntitySprites() {
     // Cargar las imagenes antes de convertilas en canvas
@@ -100,7 +104,7 @@ async function preRenderEntitySprites() {
         const spriteCtx = spriteCanvas.getContext('2d');
 
         // Clear the canvas
-        spriteCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+        // spriteCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
 
         // Draw the circle background
         const centerX = spriteCanvas.width / 2;
@@ -150,7 +154,7 @@ async function preRenderEntitySprites() {
  * by first running and storing all simulation states, then rendering them
  * to improve performance.
  */
-const comando = apuesta2.command("apuesta2", async (ctx) => {
+apuesta2.command("apuesta2", async (ctx) => {
     console.log("Ejecutando apuesta2 (versión optimizada)");
     const chatId = ctx.chat.id;
     const userId = ctx.from.id;
@@ -299,6 +303,12 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
 
         const renderingStartTime = performance.now();
         profiler.start("rendering");
+
+        // Generar aqui el frame de  y guardarlo en el sprite cache
+        profiler.start("drawResultsScreen");
+        cachedResultScreen = drawResultsScreen(frameStates[frameStates.length - 1], WIDTH, HEIGHT);
+        profiler.end("drawResultsScreen");
+
         // Render each frame from the serialized states
         for (let frameIndex = 0; frameIndex < TOTAL_FRAMES; frameIndex++) {
             // Render this frame using the serialized state
@@ -452,13 +462,9 @@ const comando = apuesta2.command("apuesta2", async (ctx) => {
 
         // Generate results image separately (using the final game state)
         profiler.start("generateResultImage");
-        const resultCanvas = createCanvas(WIDTH, HEIGHT);
-        const resultContext = resultCanvas.getContext('2d', { alpha: false });
-        drawResultsScreen(resultContext, frameStates[frameStates.length - 1], WIDTH, HEIGHT);
-
         // Save results image
         const resultOut = fs.createWriteStream(resultImagePath);
-        const resultStream = resultCanvas.createPNGStream();
+        const resultStream = cachedResultScreen.createPNGStream();
         resultStream.pipe(resultOut);
 
         await new Promise((resolve, reject) => {
@@ -617,12 +623,6 @@ function processFrameSimulation(gameState, frameIndex, fps, simulationSpeed) {
  * Render a frame from the serialized state
  */
 function renderFrame(context, width, height, fps, serializedState) {
-    profiler.start("background");
-    // Draw background
-    context.fillStyle = '#e0e0e0';
-    context.fillRect(0, 0, WIDTH, HEIGHT);
-    profiler.end("background");
-
     if (serializedState.countdown > 0) {
         // Draw countdown screen
         profiler.start("drawCountdownScreen");
@@ -630,10 +630,19 @@ function renderFrame(context, width, height, fps, serializedState) {
         profiler.end("drawCountdownScreen");
     } else if (serializedState.gameOver) {
         // Draw game over screen
-        profiler.start("drawResultsScreen");
-        drawResultsScreen(context, serializedState, width, height);
-        profiler.end("drawResultsScreen");
+        profiler.start("renderResultImage");
+        // TODO: creo que se puede optimizar aun mas el dibujo de la pantalla de resultados y del contador pero
+        // supondria rehacer la funcion render frame y la padre tambien
+        context.drawImage(cachedResultScreen, 0, 0);
+        profiler.end("renderResultImage");
     } else {
+        // Draw background
+        profiler.start("background");
+        context.fillStyle = '#e0e0e0';
+        context.fillRect(0, 0, WIDTH, HEIGHT);
+        profiler.end("background");
+
+
         profiler.start("renderEntities");
         // Draw entities from serialized data
         serializedState.entities.forEach(entity => {
@@ -682,7 +691,6 @@ function drawEntity(ctx, entityData) {
     const type = entityData.type;
 
     // Round coordinates to integers for better performance
-    // TODO: Review si es buena idea esto o es no needed
     const x = Math.floor(entityData.x);
     const y = Math.floor(entityData.y);
 
@@ -771,15 +779,12 @@ function drawCountdownScreenFromSerialized(ctx, serializedState, width, height, 
     ctx.fillStyle = '#e0e0e0';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw all entities but without movement
-    serializedState.entities.forEach(entity => {
-        drawEntity(ctx, entity);
-    });
-
     // Draw the countdown number
     const countdownSeconds = Math.ceil(serializedState.countdown / fps);
     let countdownImage;
 
+    // TODO: usar lso sprites, aunque a lo mejor no hacer falta con el nuevo aproach
+    // El nuevo es guardar la imagen de contador por completo y luego utilizarla
     if (countdownSeconds === 3) {
         countdownImage = imageCache['countdown_3'];
     } else if (countdownSeconds === 2) {
@@ -876,179 +881,6 @@ function createEntityAtRandomPosition(state, type) {
 
     // Create entity but don't add it to state yet (will be done after overlap check)
     return new Entity(type, x, y, state.width);
-}
-
-// Game Entity Class
-class Entity {
-    constructor(type, x, y, stateWidth) {
-        this.type = type;
-        this.x = x;
-        this.y = y;
-        this.radius = stateWidth * 0.03; // Responsive size = 21.6
-        this.vx = (Math.random() * 2 - 1) * (stateWidth * 0.15);
-        this.vy = (Math.random() * 2 - 1) * (stateWidth * 0.15);
-        this.captureEffect = 0;
-        this.beingCaptured = false;
-    }
-
-    update(state, deltaTime, simulationSpeed) {
-        // Don't update if we're still in countdown
-        if (state.countdown > 0) {
-            return;
-        }
-
-        // Apply simulation speed multiplier
-        const adjustedDeltaTime = deltaTime * simulationSpeed;
-
-        // Move based on velocity
-        this.x += this.vx * adjustedDeltaTime;
-        this.y += this.vy * adjustedDeltaTime;
-
-        // Wall collisions
-        if (this.x - this.radius < 0) {
-            this.x = this.radius;
-            this.vx = -this.vx;
-        } else if (this.x + this.radius > state.width) {
-            this.x = state.width - this.radius;
-            this.vx = -this.vx;
-        }
-
-        if (this.y - this.radius < 0) {
-            this.y = this.radius;
-            this.vy = -this.vy;
-        } else if (this.y + this.radius > state.height) {
-            this.y = state.height - this.radius;
-            this.vy = -this.vy;
-        }
-
-        // Update capture effect (fade out) - increased fade speed
-        if (this.captureEffect > 0) {
-            this.captureEffect -= adjustedDeltaTime * 4;
-            if (this.captureEffect < 0) {
-                this.captureEffect = 0;
-                // Reset the being captured flag
-                this.beingCaptured = false;
-                // Remove from the capturing entities set
-                state.capturingEntities.delete(this);
-            }
-        }
-    }
-
-    draw(ctx) {
-        const colors = TEAM_COLORS[this.type];
-
-        // Draw circle background
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = colors.fill;
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = colors.stroke;
-        ctx.stroke();
-
-        // Draw image instead of text
-        if (imageCache[this.type]) {
-            const img = imageCache[this.type];
-            const imgSize = this.radius * 1.8; // Slightly larger than radius
-            ctx.drawImage(img, this.x - imgSize / 2, this.y - imgSize / 2, imgSize, imgSize);
-        } else {
-            // Fallback if image not loaded
-            ctx.font = `${this.radius * 1.2}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = colors.stroke;
-
-            let text;
-            if (this.type === TEAM_TYPES.ROCK) text = 'R';
-            else if (this.type === TEAM_TYPES.PAPER) text = 'P';
-            else text = 'S';
-
-            ctx.fillText(text, this.x, this.y);
-        }
-
-        // Draw capture effect if active
-        if (this.captureEffect > 0) {
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius * (1 + this.captureEffect * 0.5), 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${this.captureEffect})`;
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        }
-    }
-
-    collidesWith(other) {
-        // Don't check collisions if we're still in countdown
-        if (this.beingCaptured || other.beingCaptured) {
-            return false;
-        }
-
-        const dx = this.x - other.x;
-        const dy = this.y - other.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < this.radius + other.radius;
-    }
-
-    resolveCollision(other) {
-        // Calculate collision normal
-        const dx = other.x - this.x;
-        const dy = other.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Normal vector (points from this entity to the other entity)
-        const nx = dx / distance;
-        const ny = dy / distance;
-
-        // Calculate dot product of velocity and normal (projection of velocity onto normal)
-        const dotProductThis = this.vx * nx + this.vy * ny;
-        const dotProductOther = other.vx * nx + other.vy * ny;
-
-        // Reflect velocities based on the normal vector
-        // Formula: v' = v - 2(v·n)n
-        this.vx = this.vx - 2 * (dotProductThis * nx);
-        this.vy = this.vy - 2 * (dotProductThis * ny);
-        other.vx = other.vx - 2 * (dotProductOther * nx);
-        other.vy = other.vy - 2 * (dotProductOther * ny);
-
-        // Separate objects to prevent overlap
-        const overlap = this.radius + other.radius - distance;
-        if (overlap > 0) {
-            this.x -= (overlap / 2) * nx;
-            this.y -= (overlap / 2) * ny;
-            other.x += (overlap / 2) * nx;
-            other.y += (overlap / 2) * ny;
-        }
-    }
-
-    capture(state, newType) {
-        // Don't allow already captured entities to be captured again
-        if (this.beingCaptured || state.capturingEntities.has(this)) {
-            return;
-        }
-
-        // Reduce count for old type
-        state.teamCounts[this.type]--;
-
-        // Update type
-        this.type = newType;
-
-        // Increase count for new type
-        state.teamCounts[newType]++;
-
-        // Add capture effect - set to maximum strength
-        this.captureEffect = 1.0;
-        this.beingCaptured = true;
-        state.capturingEntities.add(this);
-
-        // Add capture animation
-        state.captureAnimations = state.captureAnimations.filter(anim => anim.entity !== this);
-        state.captureAnimations.push({
-            x: this.x,
-            y: this.y,
-            radius: this.radius,
-            time: 1.0,
-            entity: this
-        });
-    }
 }
 
 function updateGame(state, deltaTime, simulationSpeed) {
@@ -1155,50 +987,12 @@ function determineWinner(state) {
     }
 }
 
-function drawCountdownScreen(ctx, state, width, height, fps) {
-    // Clear the canvas
-    ctx.clearRect(0, 0, width, height);
 
-    // Draw background
-    ctx.fillStyle = '#e0e0e0';
-    ctx.fillRect(0, 0, width, height);
+function drawResultsScreen(state, width, height) {
+    // Dibujar en canvas y guardar en cached img
+    const resultCanvas = createCanvas(WIDTH, HEIGHT);
+    const ctx = resultCanvas.getContext("2d");
 
-    // Draw all entities but without movement
-    state.entities.forEach(entity => entity.draw(ctx));
-
-    // Draw the countdown number
-    const countdownSeconds = Math.ceil(state.countdown / fps);
-    let countdownImage;
-
-    if (countdownSeconds === 3) {
-        countdownImage = imageCache['countdown_3'];
-    } else if (countdownSeconds === 2) {
-        countdownImage = imageCache['countdown_2'];
-    } else if (countdownSeconds === 1) {
-        countdownImage = imageCache['countdown_1'];
-    } else {
-        countdownImage = imageCache['countdown_go'];
-    }
-
-    // Draw the countdown image or fallback to text
-    if (countdownImage) {
-        const imgSize = Math.min(width, height) * 0.3;
-        ctx.drawImage(countdownImage, (width - imgSize) / 2, (height - imgSize) / 2, imgSize, imgSize);
-    } else {
-        // Fallback to text
-        ctx.fillStyle = '#333333';
-        ctx.font = 'bold 96px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(
-            countdownSeconds > 0 ? countdownSeconds.toString() : '¡YA!',
-            width / 2,
-            height / 2
-        );
-    }
-}
-
-function drawResultsScreen(ctx, state, width, height) {
     // Draw background
     ctx.fillStyle = '#e0e0e0';
     ctx.fillRect(0, 0, width, height);
@@ -1255,9 +1049,9 @@ function drawResultsScreen(ctx, state, width, height) {
 
     // Rock count
     ctx.fillStyle = rockColor;
-    if (imageCache[TEAM_TYPES.ROCK]) {
+    if (spriteCache[`${TEAM_TYPES.ROCK}_${RADIUS_SIZE}`]) {
         ctx.drawImage(
-            imageCache[TEAM_TYPES.ROCK],
+            spriteCache[`${TEAM_TYPES.ROCK}_${RADIUS_SIZE}`],
             width / 2 - 150,
             countsY,
             iconSize,
@@ -1270,9 +1064,9 @@ function drawResultsScreen(ctx, state, width, height) {
 
     // Paper count
     ctx.fillStyle = paperColor;
-    if (imageCache[TEAM_TYPES.PAPER]) {
+    if (spriteCache[`${TEAM_TYPES.PAPER}_${RADIUS_SIZE}`]) {
         ctx.drawImage(
-            imageCache[TEAM_TYPES.PAPER],
+            spriteCache[`${TEAM_TYPES.PAPER}_${RADIUS_SIZE}`],
             width / 2 - 150,
             countsY + spacing,
             iconSize,
@@ -1285,10 +1079,10 @@ function drawResultsScreen(ctx, state, width, height) {
 
     // Scissors count
     ctx.fillStyle = scissorsColor;
-    if (imageCache[TEAM_TYPES.SCISSORS]) {
+    if (spriteCache[`${TEAM_TYPES.SCISSORS}_${RADIUS_SIZE}`]) {
         ctx.drawImage(
-            imageCache[TEAM_TYPES.SCISSORS],
-            width / 2 - 150,
+            spriteCache[`${TEAM_TYPES.SCISSORS}_${RADIUS_SIZE}`],
+        width / 2 - 150,
             countsY + spacing * 2,
             iconSize,
             iconSize
@@ -1297,4 +1091,6 @@ function drawResultsScreen(ctx, state, width, height) {
     } else {
         ctx.fillText(`Tijera: ${state.teamCounts[TEAM_TYPES.SCISSORS]}`, width / 2, countsY + spacing * 2);
     }
+
+    return resultCanvas;
 }
