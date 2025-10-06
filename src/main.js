@@ -606,8 +606,18 @@ async function handleVideoDownload(ctx) {
         // Path del video
         const outputPath = `temp/video.mp4`;
         
-        // Comando yt-dlp para descargar el video
-        const command = `yt-dlp -o "${outputPath}" "${url}" -S vcodec:h264`;
+        // Comando yt-dlp según la plataforma
+        const isTikTok = url.includes('tiktok.com');
+        const isInstagram = url.includes('instagram.com');
+        let command = `yt-dlp -o "${outputPath}" "${url}"`;
+        
+        if (isTikTok) {
+            // Forzamos MP4/H264 para mejor compatibilidad con Telegram
+            command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
+        } else if (isInstagram) {
+            // Evitar playlists y priorizar MP4
+            command = `yt-dlp -o "${outputPath}" -S vcodec:h264,ext:mp4 "${url}"`;
+        }
         
         console.log(`Ejecutando: ${command}`);
         const { stdout, stderr } = await execAsync(command);
