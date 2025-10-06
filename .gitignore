@@ -6,3 +6,5 @@ node_modules
 /db
 temp
 logs
+audio.oga
+src/dev.js

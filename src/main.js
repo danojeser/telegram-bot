@@ -7,11 +7,14 @@ import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageReques
 import { Bot, InputFile } from "grammy";
 import { hydrateFiles } from "@grammyjs/files";
 import { exec } from 'child_process';
+import { promisify } from 'util';
 import dualAdapter from './db/dualAdapter.js';
 import { createCanvas } from 'canvas';
 import * as path from 'path';
 import { apuesta } from './ppt-game.js';
 import { apuesta2 } from './game-v2.js';
+
+const execAsync = promisify(exec);
 
 // Variables de entorno
 dotenv.config()
@@ -96,11 +99,9 @@ bot.on('message:text', async (ctx, next) => {
         await dualAdapter.messageLogger(ctx.message.from.id, ctx.message.chat.id, ctx.message.text);
     }
 
-    if (ctx.message.text.includes('tiktok.com')) {
-        await ctx.reply("¿Otro Tiktok? ¿En serio?");
-    }
-    if (ctx.message.text.includes('/reel/') || ctx.message.text.includes('/reels/')) {
-        await ctx.reply(TEXTREEL);
+    // Detectar URLs de TikTok o Instagram Reels
+    if (ctx.message.text.includes('tiktok.com') || ctx.message.text.includes('/reel/') || ctx.message.text.includes('/reels/') || ctx.message.text.includes('instagram.com/')) {
+        await handleVideoDownload(ctx);
     }
     await next();
 });
@@ -584,6 +585,71 @@ bot.use(apuesta2);
 
 bot.start();
 
+// Función para manejar la descarga de videos
+async function handleVideoDownload(ctx) {
+    try {
+        const url = extractUrl(ctx.message.text);
+        if (!url) {
+            await ctx.reply("No se pudo extraer la URL del mensaje");
+            return;
+        }
+
+        // Enviar mensaje de procesamiento
+        await ctx.reply("📥 Descargando video...");
+        
+        // Crear directorio temp si no existe
+        if (!fs.existsSync('temp')) {
+            fs.mkdirSync('temp');
+        }
+
+
+        // Path del video
+        const outputPath = `temp/video.mp4`;
+        
+        // Comando yt-dlp para descargar el video
+        const command = `yt-dlp -o "${outputPath}" "${url}"`;
+        
+        console.log(`Ejecutando: ${command}`);
+        const { stdout, stderr } = await execAsync(command);
+        
+        // Buscar el archivo descargado
+        const files = fs.readdirSync('temp');
+        const videoFile = files.find(file => file.startsWith(`video`));
+        
+        if (!videoFile) {
+            await ctx.reply("❌ Error: No se pudo descargar el video");
+            return;
+        }
+        
+        const videoPath = `temp/${videoFile}`;
+        
+        // Verificar que el archivo existe y tiene contenido
+        const stats = fs.statSync(videoPath);
+        if (stats.size === 0) {
+            await ctx.reply("❌ Error: El archivo descargado está vacío");
+            fs.unlinkSync(videoPath);
+            return;
+        }
+        
+        // Enviar el video
+        await ctx.reply("✅ Video descargado, enviando...");
+        await ctx.replyWithVideo(new InputFile(videoPath), {reply_to_message_id : ctx.message.message_id});
+        
+        // Eliminar el archivo temporal
+        fs.unlinkSync(videoPath);
+        
+    } catch (error) {
+        console.error('Error descargando video:', error);
+        await ctx.reply("❌ Error al descargar el video. Verifica que la URL sea válida.");
+    }
+}
+
+// Función para extraer URL del texto del mensaje
+function extractUrl(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matches = text.match(urlRegex);
+    return matches ? matches[0] : null;
+}
 
 function getArgCommand(text) {
     return text.substring(text.indexOf(" ") + 1, text.length+1);
