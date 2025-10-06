@@ -607,7 +607,7 @@ async function handleVideoDownload(ctx) {
         const outputPath = `temp/video.mp4`;
         
         // Comando yt-dlp para descargar el video
-        const command = `yt-dlp -o "${outputPath}" "${url}"`;
+        const command = `yt-dlp -o "${outputPath}" "${url}" -S vcodec:h264`;
         
         console.log(`Ejecutando: ${command}`);
         const { stdout, stderr } = await execAsync(command);
