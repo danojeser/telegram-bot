@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 
 // Variables de entorno
 dotenv.config()
-const TOKEN = process.env.TELEGRAM_TOKEN_DEV;
+const TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
