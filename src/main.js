@@ -13,6 +13,7 @@ import { createCanvas } from 'canvas';
 import * as path from 'path';
 import { apuesta } from './ppt-game.js';
 import { apuesta2 } from './game-v2.js';
+import { instagramGetUrl } from "instagram-url-direct"
 
 const execAsync = promisify(exec);
 
@@ -100,8 +101,8 @@ bot.on('message:text', async (ctx, next) => {
     }
 
     // Detectar URLs de TikTok o Instagram Reels
-    if (ctx.message.text.includes('tiktok.com') || ctx.message.text.includes('/reel/') || ctx.message.text.includes('/reels/') || ctx.message.text.includes('instagram.com/')) {
-        await handleVideoDownload(ctx);
+    if (ctx.message.text.includes('tiktok.com') || ctx.message.text.includes('/reel/') || ctx.message.text.includes('/reels/') || ctx.message.text.includes('instagram.com/p/')) {
+        await handlePostDownload(ctx);
     }
     await next();
 });
@@ -586,7 +587,7 @@ bot.use(apuesta2);
 bot.start();
 
 // Función para manejar la descarga de videos
-async function handleVideoDownload(ctx) {
+async function handlePostDownload(ctx) {
     try {
         const url = extractUrl(ctx.message.text);
         if (!url) {
@@ -594,60 +595,85 @@ async function handleVideoDownload(ctx) {
             return;
         }
 
-        // Enviar mensaje de procesamiento
-        await ctx.reply("📥 Descargando video...");
+        await ctx.reply("📥 Procesando publicación...");
         
         // Crear directorio temp si no existe
         if (!fs.existsSync('temp')) {
             fs.mkdirSync('temp');
         }
 
+        let dataInstagram = null;
+        let instagramImagesToSend = [];
+        let instagramVideoToSend = [];
+
 
         // Path del video
         const outputPath = `temp/video.mp4`;
+    
         
-        // Comando yt-dlp según la plataforma
-        const isTikTok = url.includes('tiktok.com');
-        const isInstagram = url.includes('instagram.com');
-        let command = `yt-dlp -o "${outputPath}" "${url}"`;
-        
-        if (isTikTok) {
+        if (url.includes('tiktok.com')) {
             // Forzamos MP4/H264 para mejor compatibilidad con Telegram
             command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
-        } else if (isInstagram) {
-            // Evitar playlists y priorizar MP4
-            command = `yt-dlp -o "${outputPath}" -S vcodec:h264,ext:mp4 "${url}"`;
-        }
-        
-        console.log(`Ejecutando: ${command}`);
-        const { stdout, stderr } = await execAsync(command);
-        
-        // Buscar el archivo descargado
-        const files = fs.readdirSync('temp');
-        const videoFile = files.find(file => file.startsWith(`video`));
-        
-        if (!videoFile) {
-            await ctx.reply("❌ Error: No se pudo descargar el video");
-            return;
-        }
-        
-        const videoPath = `temp/${videoFile}`;
-        
-        // Verificar que el archivo existe y tiene contenido
-        const stats = fs.statSync(videoPath);
-        if (stats.size === 0) {
-            await ctx.reply("❌ Error: El archivo descargado está vacío");
+
+            console.log(`Ejecutando: ${command}`);
+            const { stdout, stderr } = await execAsync(command);
+            
+            // Buscar el archivo descargado
+            const files = fs.readdirSync('temp');
+            const videoFile = files.find(file => file.startsWith(`video`));
+            
+            if (!videoFile) {
+                await ctx.reply("❌ Error: No se pudo descargar el video");
+                return;
+            }
+            
+            const videoPath = `temp/${videoFile}`;
+            
+            // Verificar que el archivo existe y tiene contenido
+            const stats = fs.statSync(videoPath);
+            if (stats.size === 0) {
+                await ctx.reply("❌ Error: El archivo descargado está vacío");
+                fs.unlinkSync(videoPath);
+                return;
+            }
+            
+            // Enviar el video
+            await ctx.reply("✅ Video descargado, enviando...");
+            await ctx.replyWithVideo(new InputFile(videoPath), {reply_to_message_id : ctx.message.message_id});
+
+            // Eliminar el archivo temporal
             fs.unlinkSync(videoPath);
-            return;
+        } else if (url.includes('instagram.com')) {
+            dataInstagram = await instagramGetUrl(url);
+
+            dataInstagram.media_details.forEach((singleMedia) => {
+                if (singleMedia.type === 'image') {
+                    instagramImagesToSend.push({ media: singleMedia.url, type: 'photo' });
+                } else if (singleMedia.type === 'video') {
+                    // TODO: si no funciona, hay que descargar y mojon pa mi
+                    instagramVideoToSend.push({ media: singleMedia.url, type: 'video' });
+                }
+            });
+
+            // Enviar imagenes en max de 10, por limite de album de telegram
+            for (let i = 0; i < instagramImagesToSend.length; i += 10) {
+                const chunk = instagramImagesToSend.slice(i, i + 10);
+                if (chunk.length > 0) {
+                    await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
+                }
+            }
+            // Enviar videos en max de 10, por limite de album de telegram
+            for (let i = 0; i < instagramVideoToSend.length; i += 10) {
+                const chunk = instagramVideoToSend.slice(i, i + 10);
+                if (chunk.length > 0) {
+                    await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
+                }
+            }
+            // Hay algunas publicaciones que dice que falla el enlace y es porque salta filtro NSFW: https://github.com/victorsouzaleal/instagram-direct-url/issues/42
+            await ctx.reply(dataInstagram.post_info.caption);
         }
         
-        // Enviar el video
-        await ctx.reply("✅ Video descargado, enviando...");
-        await ctx.replyWithVideo(new InputFile(videoPath), {reply_to_message_id : ctx.message.message_id});
-        
-        // Eliminar el archivo temporal
-        fs.unlinkSync(videoPath);
-        
+        await ctx.reply("✅ Publicación procesada");
     } catch (error) {
         console.error('Error descargando video:', error);
         await ctx.reply("❌ Error al descargar el video. Verifica que la URL sea válida.");
