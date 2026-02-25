@@ -670,7 +670,10 @@ async function handlePostDownload(ctx) {
                 }
             }
             // Hay algunas publicaciones que dice que falla el enlace y es porque salta filtro NSFW: https://github.com/victorsouzaleal/instagram-direct-url/issues/42
-            await ctx.reply(dataInstagram.post_info.caption);
+            const caption = dataInstagram?.post_info?.caption;
+            if (typeof caption === 'string' && caption.trim().length > 0) {
+                await ctx.reply(caption);
+            }
         }
         
         await ctx.reply("✅ Publicación procesada");
