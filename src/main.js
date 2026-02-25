@@ -586,6 +586,32 @@ bot.use(apuesta2);
 
 bot.start();
 
+async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
+    const outputPath = `temp/video.mp4`;
+    const command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
+
+    console.log(`Ejecutando: ${command}`);
+    await execAsync(command);
+
+    if (!fs.existsSync(outputPath)) {
+        await ctx.reply("❌ Error: No se pudo descargar el video con yt-dlp");
+        return false;
+    }
+
+    const stats = fs.statSync(outputPath);
+    if (stats.size === 0) {
+        await ctx.reply("❌ Error: El archivo descargado está vacío");
+        fs.unlinkSync(outputPath);
+        return false;
+    }
+
+    await ctx.reply("✅ Video descargado, enviando...");
+    await ctx.replyWithVideo(new InputFile(outputPath), {reply_to_message_id : replyToMessageId});
+
+    fs.unlinkSync(outputPath);
+    return true;
+}
+
 // Función para manejar la descarga de videos
 async function handlePostDownload(ctx) {
     try {
@@ -605,81 +631,55 @@ async function handlePostDownload(ctx) {
         let dataInstagram = null;
         let instagramImagesToSend = [];
         let instagramVideoToSend = [];
-
-
-        // Path del video
-        const outputPath = `temp/video.mp4`;
     
         
         if (url.includes('tiktok.com')) {
-            // Forzamos MP4/H264 para mejor compatibilidad con Telegram
-            let command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
-
-            console.log(`Ejecutando: ${command}`);
-            const { stdout, stderr } = await execAsync(command);
-            
-            // Buscar el archivo descargado
-            const files = fs.readdirSync('temp');
-            const videoFile = files.find(file => file.startsWith(`video`));
-            
-            if (!videoFile) {
-                await ctx.reply("❌ Error: No se pudo descargar el video");
-                return;
-            }
-            
-            const videoPath = `temp/${videoFile}`;
-            
-            // Verificar que el archivo existe y tiene contenido
-            const stats = fs.statSync(videoPath);
-            if (stats.size === 0) {
-                await ctx.reply("❌ Error: El archivo descargado está vacío");
-                fs.unlinkSync(videoPath);
-                return;
-            }
-            
-            // Enviar el video
-            await ctx.reply("✅ Video descargado, enviando...");
-            await ctx.replyWithVideo(new InputFile(videoPath), {reply_to_message_id : ctx.message.message_id});
-
-            // Eliminar el archivo temporal
-            fs.unlinkSync(videoPath);
+            const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
+            if (!ok) return;
         } else if (url.includes('instagram.com')) {
-            dataInstagram = await instagramGetUrl(url);
+            try {
+                dataInstagram = await instagramGetUrl(url);
 
-            dataInstagram.media_details.forEach((singleMedia) => {
-                if (singleMedia.type === 'image') {
-                    instagramImagesToSend.push({ media: singleMedia.url, type: 'photo' });
-                } else if (singleMedia.type === 'video') {
-                    // TODO: si no funciona, hay que descargar y mojon pa mi
-                    instagramVideoToSend.push({ media: singleMedia.url, type: 'video' });
-                }
-            });
+                dataInstagram.media_details.forEach((singleMedia) => {
+                    if (singleMedia.type === 'image') {
+                        instagramImagesToSend.push({ media: singleMedia.url, type: 'photo' });
+                    } else if (singleMedia.type === 'video') {
+                        // TODO: si no funciona, hay que descargar y mojon pa mi
+                        instagramVideoToSend.push({ media: singleMedia.url, type: 'video' });
+                    }
+                });
 
-            // Enviar imagenes en max de 10, por limite de album de telegram
-            for (let i = 0; i < instagramImagesToSend.length; i += 10) {
-                const chunk = instagramImagesToSend.slice(i, i + 10);
-                if (chunk.length > 0) {
-                    await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
+                const sendMediaInChunks = async (mediaItems) => {
+                    for (let i = 0; i < mediaItems.length; i += 10) {
+                        const chunk = mediaItems.slice(i, i + 10);
+                        if (chunk.length > 0) {
+                            await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
+                        }
+                    }
+                };
+
+                // Enviar imagenes y videos en max de 10, por limite de album de telegram
+                await sendMediaInChunks(instagramImagesToSend);
+                await sendMediaInChunks(instagramVideoToSend);
+
+                // Hay algunas publicaciones que dice que falla el enlace y es porque salta filtro NSFW: https://github.com/victorsouzaleal/instagram-direct-url/issues/42
+                const caption = dataInstagram?.post_info?.caption;
+                if (typeof caption === 'string' && caption.trim().length > 0) {
+                    await ctx.reply(caption);
                 }
-            }
-            // Enviar videos en max de 10, por limite de album de telegram
-            for (let i = 0; i < instagramVideoToSend.length; i += 10) {
-                const chunk = instagramVideoToSend.slice(i, i + 10);
-                if (chunk.length > 0) {
-                    await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
-                }
-            }
-            // Hay algunas publicaciones que dice que falla el enlace y es porque salta filtro NSFW: https://github.com/victorsouzaleal/instagram-direct-url/issues/42
-            const caption = dataInstagram?.post_info?.caption;
-            if (typeof caption === 'string' && caption.trim().length > 0) {
-                await ctx.reply(caption);
+            } catch (instagramError) {
+                console.warn('Instagram direct URL failed, trying yt-dlp:', instagramError);
+                await ctx.reply("⚠️ El método normal falló, intentando con otro..");
+
+                const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
+                if (!ok) return;
             }
         }
         
         await ctx.reply("✅ Publicación procesada");
     } catch (error) {
         console.error('Error descargando video:', error);
-        await ctx.reply("❌ Error al descargar el video. Verifica que la URL sea válida.");
+        await ctx.reply("❌ Error al descargar el video. Que lo arregle Dani.");
     }
 }
 
