@@ -13,7 +13,8 @@ import { createCanvas } from 'canvas';
 import * as path from 'path';
 import { apuesta } from './ppt-game.js';
 import { apuesta2 } from './game-v2.js';
-import { instagramGetUrl } from "instagram-url-direct"
+import { instagramGetUrl } from "instagram-url-direct";
+import Tiktok from "@tobyg74/tiktok-api-dl";
 
 const execAsync = promisify(exec);
 
@@ -612,6 +613,91 @@ async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
     return true;
 }
 
+// Los enlaces que vienen de TIktok estan codificados en Base64
+function getTikcdnDirectUrl(imageUrl) {
+    try {
+        const urlObj = new URL(imageUrl);
+        if (!urlObj.hostname.includes('tikcdn.io')) {
+            return null;
+        }
+
+        const pathParts = urlObj.pathname.split('/ssstik/').filter(Boolean);
+        const base64Part = pathParts[pathParts.length - 1];
+        if (!base64Part) {
+            return null;
+        }
+
+        const decodedBase64 = decodeURIComponent(base64Part)
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+
+        const padding = '='.repeat((4 - (decodedBase64.length % 4)) % 4);
+        const decodedUrl = Buffer.from(decodedBase64 + padding, 'base64').toString('utf8');
+
+        if (!decodedUrl.startsWith('http')) {
+            return null;
+        }
+
+        return decodedUrl;
+    } catch (error) {
+        return null;
+    }
+}
+
+function extensionFromContentType(contentType) {
+    if (!contentType) return null;
+    const normalized = contentType.split(';')[0].trim().toLowerCase();
+    const map = {
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+        'image/gif': '.gif',
+    };
+    return map[normalized] || null;
+}
+
+async function downloadImageToTemp(imageUrl, index) {
+    let response= await fetch(imageUrl);
+
+    if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+    }
+
+    const buffer = await response.buffer();
+
+    // Obtener extension de la imagen desde el content-type, por defecto jpg
+    let ext = ".jpg";
+    const contentType = response.headers.get('content-type');
+    const extFromType = extensionFromContentType(contentType);
+    if (extFromType) {
+        ext = extFromType;
+    } else {
+        // Obtener la extension desde el enlace en caso de que no haya content-type
+        const urlObj = new URL(imageUrl);
+        const parsedExt = path.extname(urlObj.pathname).toLowerCase();
+        if (parsedExt && parsedExt.length <= 5) {
+            ext = parsedExt;
+        }
+    }
+
+
+    const fileName = `temp_image_${Date.now()}_${index}${ext}`;
+    const outputPath = path.join('temp', fileName);
+    fs.writeFileSync(outputPath, buffer);
+    return outputPath;
+}
+
+function safeUnlink(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    } catch (error) {
+        console.warn(`No se pudo borrar el archivo temporal: ${filePath}`, error);
+    }
+}
+
 // Función para manejar la descarga de videos
 async function handlePostDownload(ctx) {
     try {
@@ -631,11 +717,64 @@ async function handlePostDownload(ctx) {
         let dataInstagram = null;
         let instagramImagesToSend = [];
         let instagramVideoToSend = [];
+
+        const sendMediaInChunks = async (mediaItems) => {
+            for (let i = 0; i < mediaItems.length; i += 10) {
+                const chunk = mediaItems.slice(i, i + 10);
+                if (chunk.length > 0) {
+                    await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
+                }
+            }
+        };
     
         
         if (url.includes('tiktok.com')) {
-            const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
-            if (!ok) return;
+            try {
+                let response = await Tiktok.Downloader(url, {
+                    version: "v2", // "v1" | "v2" | "v3"
+                });
+
+                const result = response?.result;
+
+                if (!result) {
+                    await ctx.reply("❌ No se pudo obtener la información del post de TikTok");
+                    return;
+                }
+
+                if (result.type === "image") {
+                    const images = Array.isArray(result.images) ? result.images : [];
+                    const downloadedPaths = [];
+                    try {
+                        for (let i = 0; i < images.length; i++) {
+                            const imageUrl = images[i];
+                            const directUrl = getTikcdnDirectUrl(imageUrl);
+                            let usedUrl = directUrl || imageUrl;
+
+                            const filePath = await downloadImageToTemp(usedUrl, i);
+                            downloadedPaths.push(filePath);
+                        }
+
+                        const tiktokImagesToSend = downloadedPaths.map((filePath) => ({
+                            media: new InputFile(filePath),
+                            type: 'photo'
+                        }));
+
+                        await sendMediaInChunks(tiktokImagesToSend);
+                    } finally {
+                        downloadedPaths.forEach((filePath) => safeUnlink(filePath));
+                    }
+                } else if (result.type === "video") {
+                    const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
+                    if (!ok) return;
+                }
+
+                const caption = result?.desc;
+                if (typeof caption === 'string' && caption.trim().length > 0) {
+                    await ctx.reply(caption);
+                }
+            } catch (tiktokError) {
+                console.warn('Tiktok direct URL failed, trying yt-dlp:', tiktokError);
+            }
         } else if (url.includes('instagram.com')) {
             try {
                 dataInstagram = await instagramGetUrl(url);
@@ -644,19 +783,9 @@ async function handlePostDownload(ctx) {
                     if (singleMedia.type === 'image') {
                         instagramImagesToSend.push({ media: singleMedia.url, type: 'photo' });
                     } else if (singleMedia.type === 'video') {
-                        // TODO: si no funciona, hay que descargar y mojon pa mi
                         instagramVideoToSend.push({ media: singleMedia.url, type: 'video' });
                     }
                 });
-
-                const sendMediaInChunks = async (mediaItems) => {
-                    for (let i = 0; i < mediaItems.length; i += 10) {
-                        const chunk = mediaItems.slice(i, i + 10);
-                        if (chunk.length > 0) {
-                            await ctx.replyWithMediaGroup(chunk, {reply_to_message_id : ctx.message.message_id});
-                        }
-                    }
-                };
 
                 // Enviar imagenes y videos en max de 10, por limite de album de telegram
                 await sendMediaInChunks(instagramImagesToSend);
