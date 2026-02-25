@@ -618,7 +618,7 @@ function getTikcdnDirectUrl(imageUrl) {
     try {
         const urlObj = new URL(imageUrl);
         if (!urlObj.hostname.includes('tikcdn.io')) {
-            return null;
+            return imageUrl;
         }
 
         const pathParts = urlObj.pathname.split('/ssstik/').filter(Boolean);
@@ -717,6 +717,7 @@ async function handlePostDownload(ctx) {
         let dataInstagram = null;
         let instagramImagesToSend = [];
         let instagramVideoToSend = [];
+        let tiktokImagesToSend = [];
 
         const sendMediaInChunks = async (mediaItems) => {
             for (let i = 0; i < mediaItems.length; i += 10) {
@@ -731,7 +732,7 @@ async function handlePostDownload(ctx) {
         if (url.includes('tiktok.com')) {
             try {
                 let response = await Tiktok.Downloader(url, {
-                    version: "v2", // "v1" | "v2" | "v3"
+                    version: "v1", // "v1" | "v2" | "v3"
                 });
 
                 const result = response?.result;
@@ -743,37 +744,26 @@ async function handlePostDownload(ctx) {
 
                 if (result.type === "image") {
                     const images = Array.isArray(result.images) ? result.images : [];
-                    const downloadedPaths = [];
-                    try {
-                        for (let i = 0; i < images.length; i++) {
-                            const imageUrl = images[i];
-                            const directUrl = getTikcdnDirectUrl(imageUrl);
-                            let usedUrl = directUrl || imageUrl;
 
-                            const filePath = await downloadImageToTemp(usedUrl, i);
-                            downloadedPaths.push(filePath);
-                        }
+                    images.forEach((image, index) => {
+                        const directUrl = getTikcdnDirectUrl(image);
+                        tiktokImagesToSend.push({media: directUrl, type: 'photo' });
+                    })
 
-                        const tiktokImagesToSend = downloadedPaths.map((filePath) => ({
-                            media: new InputFile(filePath),
-                            type: 'photo'
-                        }));
-
-                        await sendMediaInChunks(tiktokImagesToSend);
-                    } finally {
-                        downloadedPaths.forEach((filePath) => safeUnlink(filePath));
-                    }
+                    await sendMediaInChunks(tiktokImagesToSend);
                 } else if (result.type === "video") {
+                    // De los videos no se puede sacar una url que poder compartir directamente por lo que toca descargar y enviar
                     const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
                     if (!ok) return;
                 }
+
 
                 const caption = result?.desc;
                 if (typeof caption === 'string' && caption.trim().length > 0) {
                     await ctx.reply(caption);
                 }
             } catch (tiktokError) {
-                console.warn('Tiktok direct URL failed, trying yt-dlp:', tiktokError);
+                console.warn('Tiktok direct URL failed: ', tiktokError);
             }
         } else if (url.includes('instagram.com')) {
             try {
