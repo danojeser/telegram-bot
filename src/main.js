@@ -24,6 +24,8 @@ const TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
 
+const MAX_TELEGRAM_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+
 
 // Objeto del BOT
 const bot = new Bot(TOKEN);
@@ -587,12 +589,20 @@ bot.use(apuesta2);
 
 bot.start();
 
+
 async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
-    const outputPath = `temp/video.mp4`;
+    const outputPath = `temp/video_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`;
     const command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
 
     console.log(`Ejecutando: ${command}`);
-    await execAsync(command);
+    try {
+        await execAsync(command, { timeout: 120000 });
+    } catch (ytdlpError) {
+        console.error('yt-dlp falló:', ytdlpError);
+        safeUnlink(outputPath);
+        await ctx.reply("❌ Error: yt-dlp no pudo descargar el video (puede ser privado, eliminado o no soportado)");
+        return false;
+    }
 
     if (!fs.existsSync(outputPath)) {
         await ctx.reply("❌ Error: No se pudo descargar el video con yt-dlp");
@@ -602,14 +612,20 @@ async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
     const stats = fs.statSync(outputPath);
     if (stats.size === 0) {
         await ctx.reply("❌ Error: El archivo descargado está vacío");
-        fs.unlinkSync(outputPath);
+        safeUnlink(outputPath);
+        return false;
+    }
+
+    if (stats.size > MAX_TELEGRAM_VIDEO_SIZE) {
+        await ctx.reply(`❌ El video pesa demasiado te lo miras en otro sitio`);
+        safeUnlink(outputPath);
         return false;
     }
 
     await ctx.reply("✅ Video descargado, enviando...");
     await ctx.replyWithVideo(new InputFile(outputPath), {reply_to_message_id : replyToMessageId});
 
-    fs.unlinkSync(outputPath);
+    safeUnlink(outputPath);
     return true;
 }
 
