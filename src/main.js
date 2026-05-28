@@ -154,10 +154,23 @@ bot.on(':voice', async (ctx) => {
     }
 });
 
+function isBotBlockedError(error) {
+    return error?.error_code === 403 || error?.message?.includes('Forbidden');
+}
+
 // error handling
 bot.catch(async (err) => {
-    console.log(err);
-    await err.ctx.reply('Ostias, ya me he roto');
+    const error = err.error;
+    if (isBotBlockedError(error)) {
+        console.warn(`Bot bloqueado por el usuario ${err.ctx?.from?.id} en el chat ${err.ctx?.chat?.id}`);
+        return;
+    }
+    console.error(err);
+    try {
+        await err.ctx.reply('Ostias, ya me he roto');
+    } catch (replyError) {
+        console.error('No se pudo enviar el mensaje de error:', replyError.message);
+    }
 });
 
 // initialize the commands
@@ -600,7 +613,7 @@ async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
     } catch (ytdlpError) {
         console.error('yt-dlp falló:', ytdlpError);
         safeUnlink(outputPath);
-        await ctx.reply("❌ Error: yt-dlp no pudo descargar el video (puede ser privado, eliminado o no soportado)");
+        await ctx.reply("❌ Error: No se pudo descargar el video (puede ser privado, eliminado o no soportado)");
         return false;
     }
 
@@ -813,6 +826,7 @@ async function handlePostDownload(ctx) {
         
         await ctx.reply("✅ Publicación procesada");
     } catch (error) {
+        if (isBotBlockedError(error)) throw error;
         console.error('Error descargando video:', error);
         await ctx.reply("❌ Error al descargar el video. Que lo arregle Dani.");
     }
