@@ -23,6 +23,7 @@ dotenv.config()
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const TEXTREEL = process.env.TEXT_INSTAGRAM;
+const ERROR_REPORT_CHAT_ID = process.env.ERROR_REPORT_CHAT_ID;
 
 const MAX_TELEGRAM_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -166,10 +167,29 @@ bot.catch(async (err) => {
         return;
     }
     console.error(err);
+
+    const ctx = err.ctx;
+    const chatTitle = ctx?.chat?.title || ctx?.chat?.username || ctx?.chat?.first_name || String(ctx?.chat?.id ?? 'desconocido');
+    const msgDate = ctx?.msg?.date ? new Date(ctx.msg.date * 1000).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }) : 'desconocida';
+    const msgText = ctx?.msg?.text || ctx?.msg?.caption || '(sin texto)';
+    const errorShort = error?.message?.split('\n')[0] || String(error);
+
+    const reportMsg = `❌ Error en el bot\nChat: ${chatTitle}\nFecha: ${msgDate}\nMensaje: ${msgText}\nError: ${errorShort}`;
+
+    /*
     try {
-        await err.ctx.reply('Ostias, ya me he roto');
+        await ctx.reply('Ostias, ya me he roto');
     } catch (replyError) {
         console.error('No se pudo enviar el mensaje de error:', replyError.message);
+    }
+    */
+
+    if (ERROR_REPORT_CHAT_ID) {
+        try {
+            await bot.api.sendMessage(ERROR_REPORT_CHAT_ID, reportMsg);
+        } catch (reportError) {
+            console.error('No se pudo enviar el reporte de error:', reportError.message);
+        }
     }
 });
 
