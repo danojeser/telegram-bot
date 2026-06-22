@@ -112,6 +112,11 @@ bot.on('message:text', async (ctx, next) => {
 });
 
 
+// Tiempo máximo de espera para la transcripción de OpenAI (evita que el bot se quede colgado)
+const TRANSCRIPTION_TIMEOUT = 60_000; // 60 segundos
+// Tamaño máximo aceptado por Whisper
+const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25 MB
+
 bot.on(':voice', async (ctx) => {
     console.log('entrando en voice');
     let mensaje = 'Otro puto audio';
@@ -120,37 +125,49 @@ bot.on(':voice', async (ctx) => {
         const file = await ctx.getFile();
         const filePath = await file.getUrl();
 
-        // Control de que no exista el mp3, porque si existe se peta
-        if (fs.existsSync(filePath)) {
-            await fs.unlink('audio.mp3', err => {
-                if (err) {
-                    console.log(err);
-                } else {
-                    console.log('Borrado preventivo de audio exitoso');
-                }
-            });
+        // Control de que no exista el mp3 de una ejecución previa, porque si existe se peta
+        if (fs.existsSync('audio.mp3')) {
+            await fs.promises.unlink('audio.mp3');
+            console.log('Borrado preventivo de audio exitoso');
         }
 
         await downloadAudio(filePath, 'audio.mp3');
-        // TODO: Añadir una excepcion que controle que el archivo es del tamaño adecuado
 
-        // TODO: porque esto funciona???
-        const response = await openai.createTranscription(fs.createReadStream('audio.mp3'), 'whisper-1', 'illo, enverda, pue', 'text', 0, 'es');
+        // Si la conversión con ffmpeg falló, el mp3 no existe: no seguimos
+        if (!fs.existsSync('audio.mp3')) {
+            throw new Error('No se pudo convertir el audio a mp3');
+        }
 
-        // TODO: meter un catch o un algo en el caso de bug de audio testeado desde mac, no se de que bug hablo, gracias Dani del pasado
+        // Whisper rechaza audios por encima de 25 MB
+        const { size } = await fs.promises.stat('audio.mp3');
+        if (size > MAX_AUDIO_SIZE) {
+            throw new Error(`Audio demasiado grande (${size} bytes) para transcribir`);
+        }
+
+        // Carrera con un timeout: si OpenAI no responde, rechazamos en vez de colgar el bot
+        const response = await Promise.race([
+            openai.createTranscription(fs.createReadStream('audio.mp3'), 'whisper-1', 'illo, enverda, pue', 'text', 0, 'es'),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout transcribiendo audio')), TRANSCRIPTION_TIMEOUT)
+            ),
+        ]);
+
         mensaje = response.data !== '' ? response.data : mensaje;
 
-        await fs.unlink('audio.mp3', err => {
-            if (err) {
-                console.log(err);
-            } else {
-                console.log('Borrado de audio exitoso');
-            }
-        });
+        await fs.promises.unlink('audio.mp3');
+        console.log('Borrado de audio exitoso');
 
         await ctx.reply(mensaje, {reply_to_message_id : ctx.message.message_id});
     } catch (error) {
         console.error(error);
+        // Limpieza por si quedó el fichero a medias
+        try {
+            if (fs.existsSync('audio.mp3')) {
+                await fs.promises.unlink('audio.mp3');
+            }
+        } catch (cleanupError) {
+            console.error('Error limpiando audio.mp3:', cleanupError);
+        }
         return ctx.reply('Ostias, ya me he roto. El puto bug raro del audio.');
     }
 });
@@ -888,7 +905,7 @@ async function downloadAudio (url, outputFilePath) {
     const response = await fetch(url);
     const buffer = await response.buffer();
 
-    await fs.writeFileSync('audio.oga', buffer);
+    fs.writeFileSync('audio.oga', buffer);
 
     try {
         const audio = await new ffmpeg('audio.oga');
@@ -900,6 +917,17 @@ async function downloadAudio (url, outputFilePath) {
         console.log(`El archivo se ha convertido exitosamente a ${outputFilePath}`);
     } catch (e) {
         console.log(`Hubo un error al convertir el archivo: ${e.message}`);
+        // Propagamos el error para que el handler de voz lo capture y no siga con un mp3 inexistente
+        throw e;
+    } finally {
+        // Limpiamos el .oga temporal en cualquier caso
+        try {
+            if (fs.existsSync('audio.oga')) {
+                await fs.promises.unlink('audio.oga');
+            }
+        } catch (cleanupError) {
+            console.error('Error limpiando audio.oga:', cleanupError);
+        }
     }
 }
 
