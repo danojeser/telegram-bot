@@ -640,39 +640,40 @@ bot.use(apuesta2);
 bot.start();
 
 
-async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId) {
+async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId, status) {
     const outputPath = `temp/video_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`;
     const command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
 
     console.log(`Ejecutando: ${command}`);
+    await status.update("⬇️ Descargando video...");
     try {
         await execAsync(command, { timeout: 120000 });
     } catch (ytdlpError) {
         console.error('yt-dlp falló:', ytdlpError);
         safeUnlink(outputPath);
-        await ctx.reply("❌ Error: No se pudo descargar el video (puede ser privado, eliminado o no soportado)");
+        await status.update("❌ Error: No se pudo descargar el video (puede ser privado, eliminado o no soportado)");
         return false;
     }
 
     if (!fs.existsSync(outputPath)) {
-        await ctx.reply("❌ Error: No se pudo descargar el video con yt-dlp");
+        await status.update("❌ Error: No se pudo descargar el video con yt-dlp");
         return false;
     }
 
     const stats = fs.statSync(outputPath);
     if (stats.size === 0) {
-        await ctx.reply("❌ Error: El archivo descargado está vacío");
+        await status.update("❌ Error: El archivo descargado está vacío");
         safeUnlink(outputPath);
         return false;
     }
 
     if (stats.size > MAX_TELEGRAM_VIDEO_SIZE) {
-        await ctx.reply(`❌ El video pesa demasiado te lo miras en otro sitio`);
+        await status.update(`❌ El video pesa demasiado te lo miras en otro sitio`);
         safeUnlink(outputPath);
         return false;
     }
 
-    await ctx.reply("✅ Video descargado, enviando...");
+    await status.update("📤 Video descargado, enviando...");
     await ctx.replyWithVideo(new InputFile(outputPath), {reply_to_message_id : replyToMessageId});
 
     safeUnlink(outputPath);
@@ -764,17 +765,48 @@ function safeUnlink(filePath) {
     }
 }
 
+// Reporta el progreso de la descarga editando un único mensaje en vez de enviar uno nuevo por cada paso
+function createStatusReporter(ctx) {
+    let message = null;
+    let lastText = null;
+
+    return {
+        async update(text) {
+            if (text === lastText) return;
+            lastText = text;
+            try {
+                if (!message) {
+                    message = await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
+                } else {
+                    await ctx.api.editMessageText(ctx.chat.id, message.message_id, text);
+                }
+            } catch (error) {
+                console.warn('No se pudo actualizar el mensaje de estado:', error);
+            }
+        },
+        async remove() {
+            if (!message) return;
+            try {
+                await ctx.api.deleteMessage(ctx.chat.id, message.message_id);
+            } catch (error) {
+                console.warn('No se pudo borrar el mensaje de estado:', error);
+            }
+        }
+    };
+}
+
 // Función para manejar la descarga de videos
 async function handlePostDownload(ctx) {
+    const status = createStatusReporter(ctx);
     try {
         const url = extractUrl(ctx.message.text);
         if (!url) {
-            await ctx.reply("No se pudo extraer la URL del mensaje");
+            await status.update("No se pudo extraer la URL del mensaje");
             return;
         }
 
-        await ctx.reply("📥 Procesando publicación...");
-        
+        await status.update("📥 Procesando publicación...");
+
         // Crear directorio temp si no existe
         if (!fs.existsSync('temp')) {
             fs.mkdirSync('temp');
@@ -804,7 +836,7 @@ async function handlePostDownload(ctx) {
                 const result = response?.result;
 
                 if (!result) {
-                    await ctx.reply("❌ No se pudo obtener la información del post de TikTok");
+                    await status.update("❌ No se pudo obtener la información del post de TikTok");
                     return;
                 }
 
@@ -816,10 +848,11 @@ async function handlePostDownload(ctx) {
                         tiktokImagesToSend.push({media: directUrl, type: 'photo' });
                     })
 
+                    await status.update("📤 Enviando imágenes...");
                     await sendMediaInChunks(tiktokImagesToSend);
                 } else if (result.type === "video") {
                     // De los videos no se puede sacar una url que poder compartir directamente por lo que toca descargar y enviar
-                    const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
+                    const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id, status);
                     if (!ok) return;
                 }
 
@@ -830,6 +863,8 @@ async function handlePostDownload(ctx) {
                 }
             } catch (tiktokError) {
                 console.warn('Tiktok direct URL failed: ', tiktokError);
+                await status.update("❌ Error al procesar el post de TikTok");
+                return;
             }
         } else if (url.includes('instagram.com')) {
             try {
@@ -844,6 +879,7 @@ async function handlePostDownload(ctx) {
                 });
 
                 // Enviar imagenes y videos en max de 10, por limite de album de telegram
+                await status.update("📤 Enviando publicación...");
                 await sendMediaInChunks(instagramImagesToSend);
                 await sendMediaInChunks(instagramVideoToSend);
 
@@ -854,18 +890,18 @@ async function handlePostDownload(ctx) {
                 }
             } catch (instagramError) {
                 console.warn('Instagram direct URL failed, trying yt-dlp:', instagramError);
-                await ctx.reply("⚠️ El método normal falló, intentando con otro..");
+                await status.update("⚠️ El método normal falló, intentando con otro..");
 
-                const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id);
+                const ok = await downloadSingleVideoWithYtDlp(url, ctx, ctx.message.message_id, status);
                 if (!ok) return;
             }
         }
-        
-        await ctx.reply("✅ Publicación procesada");
+
+        await status.remove();
     } catch (error) {
         if (isBotBlockedError(error)) throw error;
         console.error('Error descargando video:', error);
-        await ctx.reply("❌ Error al descargar el video. Que lo arregle Dani.");
+        await status.update("❌ Error al descargar el video. Que lo arregle Dani.");
     }
 }
 
