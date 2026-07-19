@@ -297,7 +297,12 @@ bot.command('chilling', async (ctx) => {
 bot.command('superestrella', async (ctx) => {
     console.log('Ejecutando superestrella');
     const videoPath = path.join('resources', 'superestrella.mp4');
-    await ctx.replyWithVideo(new InputFile(videoPath));
+    await ctx.replyWithVideo(new InputFile(videoPath), {
+        width: 1280,
+        height: 720,
+        duration: 53,
+        supports_streaming: true
+    });
 });
 
 // COMMAND ALL
