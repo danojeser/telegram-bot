@@ -59,6 +59,7 @@ const listaComandos = [
     { command: "article", description: "Articulo random de Wikipedia"},
     { command: "miau", description: "Imagen de gatete"},
     { command: "chilling", description: "Avisa a todo el mundo de que estas chilling"},
+    { command: "superestrella", description: "Envía el video superestrella"},
     { command: "all", description: "Menciona a todo el mundo"},
     { command: "cry", description: "Indica a una persona donde llorar"},
     { command: "insult", description: "Insulto random"},
@@ -290,6 +291,13 @@ bot.command('chilling', async (ctx) => {
 
     const message = `${ctx.from.first_name}: ${process.env.CHILLING_MESSAGE || ''} ${mentions}`;
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
+});
+
+// COMMAND SUPERESTRELLA
+bot.command('superestrella', async (ctx) => {
+    console.log('Ejecutando superestrella');
+    const videoPath = path.join('resources', 'superestrella.mp4');
+    await ctx.replyWithVideo(new InputFile(videoPath));
 });
 
 // COMMAND ALL
