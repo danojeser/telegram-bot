@@ -6,7 +6,7 @@ import ffmpeg from "ffmpeg";
 import { Configuration, OpenAIApi, CreateImageRequestSizeEnum, CreateImageRequestResponseFormatEnum } from "openai";
 import { Bot, InputFile } from "grammy";
 import { hydrateFiles } from "@grammyjs/files";
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import dualAdapter from './db/dualAdapter.js';
 import { createCanvas } from 'canvas';
@@ -17,6 +17,7 @@ import { instagramGetUrl } from "instagram-url-direct";
 import Tiktok from "@tobyg74/tiktok-api-dl";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Variables de entorno
 dotenv.config()
@@ -655,7 +656,10 @@ bot.start();
 
 async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId, status) {
     const outputPath = `temp/video_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`;
-    const command = `yt-dlp -o "${outputPath}" -S ext:mp4 "${url}"`;
+    // TikTok sirve algunos videos en bytevc1/h265 sin pista de audio (bug del extractor de yt-dlp,
+    // que marca esos formatos como si tuvieran audio cuando en realidad no lo tienen). Forzamos h264,
+    // que siempre viene con audio, para no quedarnos con un video mudo.
+    const command = `yt-dlp -o "${outputPath}" -S "codec:h264,ext:mp4" "${url}"`;
 
     console.log(`Ejecutando: ${command}`);
     await status.update("⬇️ Descargando video...");
@@ -687,9 +691,14 @@ async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId, status) 
     }
 
     await status.update("📤 Video descargado, enviando...");
-    await ctx.replyWithVideo(new InputFile(outputPath), {reply_to_message_id : replyToMessageId});
+    const metadata = await getVideoMetadata(outputPath);
+    await ctx.replyWithVideo(new InputFile(outputPath), {
+        reply_to_message_id: replyToMessageId,
+        supports_streaming: true,
+        ...(metadata ?? {})
+    });
 
-    safeUnlink(outputPath);
+    // safeUnlink(outputPath);
     return true;
 }
 
@@ -775,6 +784,34 @@ function safeUnlink(filePath) {
         }
     } catch (error) {
         console.warn(`No se pudo borrar el archivo temporal: ${filePath}`, error);
+    }
+}
+
+// Obtiene width, height y duration de un video (archivo local o URL) con ffprobe.
+// Telegram/iOS necesita estos metadatos para poder reproducir el video en streaming;
+// sin ellos algunos videos no se reproducen o se muestran como archivo en iPhone.
+async function getVideoMetadata(source) {
+    try {
+        const { stdout } = await execFileAsync('ffprobe', [
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height:format=duration',
+            '-of', 'json',
+            source
+        ], { timeout: 15000 });
+
+        const data = JSON.parse(stdout);
+        const stream = data.streams?.[0];
+        const duration = parseFloat(data.format?.duration);
+
+        if (!stream?.width || !stream?.height || !Number.isFinite(duration)) {
+            return null;
+        }
+
+        return { width: stream.width, height: stream.height, duration: Math.round(duration) };
+    } catch (error) {
+        console.warn(`No se pudo obtener metadata del video (${source}):`, error.message || error);
+        return null;
     }
 }
 
@@ -883,13 +920,19 @@ async function handlePostDownload(ctx) {
             try {
                 dataInstagram = await instagramGetUrl(url);
 
-                dataInstagram.media_details.forEach((singleMedia) => {
+                for (const singleMedia of dataInstagram.media_details) {
                     if (singleMedia.type === 'image') {
                         instagramImagesToSend.push({ media: singleMedia.url, type: 'photo' });
                     } else if (singleMedia.type === 'video') {
-                        instagramVideoToSend.push({ media: singleMedia.url, type: 'video' });
+                        const metadata = await getVideoMetadata(singleMedia.url);
+                        instagramVideoToSend.push({
+                            media: singleMedia.url,
+                            type: 'video',
+                            supports_streaming: true,
+                            ...(metadata ?? {})
+                        });
                     }
-                });
+                }
 
                 // Enviar imagenes y videos en max de 10, por limite de album de telegram
                 await status.update("📤 Enviando publicación...");
