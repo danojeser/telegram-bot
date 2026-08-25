@@ -698,7 +698,7 @@ async function downloadSingleVideoWithYtDlp(url, ctx, replyToMessageId, status) 
         ...(metadata ?? {})
     });
 
-    // safeUnlink(outputPath);
+    safeUnlink(outputPath);
     return true;
 }
 
